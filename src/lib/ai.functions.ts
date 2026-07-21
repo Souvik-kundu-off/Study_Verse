@@ -241,7 +241,7 @@ Key concepts: ${(topic.key_concepts as string[])?.join(", ") ?? ""}`;
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "google/gemini-3.5-flash",
+        model: "google/gemini-2.5-flash",
         messages: [
           {
             role: "system",
