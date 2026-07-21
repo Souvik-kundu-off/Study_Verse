@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { askTutor } from "@/lib/ai.functions";
 import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
+
 import {
   X, Play, Pause, RotateCcw, Sparkles, FileText, ListChecks, BookOpen,
   Send, Loader2, CheckCircle2, ArrowRight, Video, PenLine,
@@ -336,7 +336,8 @@ function TutorPanel({ topicId }: { topicId: string }) {
       const res = await ask({ data: { topicId, question } });
       setMessages((m) => [...m, { role: "assistant", content: res.answer }]);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Tutor unavailable");
+      const msg = e instanceof Error ? e.message : "Tutor unavailable";
+      setMessages((m) => [...m, { role: "assistant", content: `⚠️ ${msg}` }]);
     } finally {
       setLoading(false);
     }
