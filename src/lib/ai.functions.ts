@@ -97,7 +97,24 @@ ${data.deadline ? `Deadline: ${data.deadline}` : "No hard deadline"}
 Available study time: ${data.minutesPerDay} minutes/day
 Preferred learning style: ${data.learningStyle ?? "mixed"}
 
-Design 4-6 progressive modules, each with 3-6 topics. For each topic give a 1-2 sentence description, estimated study minutes, 3-5 key concepts, and 2-4 recommended resource types (video, article, docs, practice). Be concrete and specific to the goal. Do not include external URLs. Return an overview paragraph plus the modules.`;
+Design 4-6 progressive modules, each with 3-6 topics. For each topic give a 1-2 sentence description, estimated study minutes, 3-5 key concepts, and 2-4 recommended resource types (video, article, docs, practice). Be concrete and specific to the goal. Do not include external URLs.
+
+Return ONLY valid json matching this TypeScript shape (no markdown, no commentary):
+{
+  "overview": string,
+  "modules": Array<{
+    "title": string,
+    "description": string,
+    "estimated_minutes": number,
+    "topics": Array<{
+      "title": string,
+      "description": string,
+      "estimated_minutes": number,
+      "key_concepts": string[],
+      "resources": Array<{ "kind": "video"|"article"|"docs"|"practice", "title": string, "note"?: string }>
+    }>
+  }>
+}`;
 
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -106,19 +123,16 @@ Design 4-6 progressive modules, each with 3-6 topics. For each topic give a 1-2 
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "google/gemini-3.5-flash",
+        model: "google/gemini-2.5-flash",
         messages: [
           {
             role: "system",
             content:
-              "You are a world-class learning designer. You produce concise, structured study roadmaps.",
+              "You are a world-class learning designer. You produce concise, structured study roadmaps as strict json.",
           },
           { role: "user", content: prompt },
         ],
-        response_format: {
-          type: "json_schema",
-          json_schema: { name: "roadmap", strict: true, schema: RoadmapSchema },
-        },
+        response_format: { type: "json_object" },
       }),
     });
 
@@ -227,7 +241,7 @@ Key concepts: ${(topic.key_concepts as string[])?.join(", ") ?? ""}`;
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "google/gemini-3.5-flash",
+        model: "google/gemini-2.5-flash",
         messages: [
           {
             role: "system",
