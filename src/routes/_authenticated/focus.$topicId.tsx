@@ -79,7 +79,6 @@ function FocusWorkspace() {
       .from("roadmap_topics")
       .update({ status: "completed", completed_at: new Date().toISOString() })
       .eq("id", topicId);
-    // Save session
     const minutes = Math.max(1, Math.round(elapsedRef.current / 60));
     if (topic?.goal_id) {
       await supabase.from("study_sessions").insert({
@@ -91,9 +90,22 @@ function FocusWorkspace() {
       });
     }
     qc.invalidateQueries();
-    toast.success("Topic completed. Great work.");
+    if (document.fullscreenElement) {
+      try { await document.exitFullscreen(); } catch { /* ignore */ }
+    }
     navigate({ to: "/dashboard" });
   }
+
+  // Enter fullscreen on mount, exit on unmount
+  useEffect(() => {
+    const el = document.documentElement;
+    el.requestFullscreen?.().catch(() => { /* user gesture may be required */ });
+    return () => {
+      if (document.fullscreenElement) {
+        document.exitFullscreen?.().catch(() => { /* ignore */ });
+      }
+    };
+  }, []);
 
   // Timer
   const [running, setRunning] = useState(true);
