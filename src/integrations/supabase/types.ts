@@ -14,7 +14,268 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      goals: {
+        Row: {
+          category: string | null
+          created_at: string
+          deadline: string | null
+          description: string | null
+          id: string
+          is_active: boolean
+          learning_style: string | null
+          level: string
+          minutes_per_day: number
+          status: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string
+          deadline?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          learning_style?: string | null
+          level?: string
+          minutes_per_day?: number
+          status?: string
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          category?: string | null
+          created_at?: string
+          deadline?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          learning_style?: string | null
+          level?: string
+          minutes_per_day?: number
+          status?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      notes: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          topic_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content?: string
+          created_at?: string
+          id?: string
+          topic_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          topic_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notes_topic_id_fkey"
+            columns: ["topic_id"]
+            isOneToOne: false
+            referencedRelation: "roadmap_topics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          full_name: string | null
+          id: string
+          onboarding_complete: boolean
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          full_name?: string | null
+          id: string
+          onboarding_complete?: boolean
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          onboarding_complete?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      roadmap_modules: {
+        Row: {
+          created_at: string
+          description: string | null
+          estimated_minutes: number
+          goal_id: string
+          id: string
+          ordinal: number
+          status: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          estimated_minutes?: number
+          goal_id: string
+          id?: string
+          ordinal: number
+          status?: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          estimated_minutes?: number
+          goal_id?: string
+          id?: string
+          ordinal?: number
+          status?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "roadmap_modules_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: false
+            referencedRelation: "goals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      roadmap_topics: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          description: string | null
+          estimated_minutes: number
+          goal_id: string
+          id: string
+          key_concepts: Json
+          module_id: string
+          ordinal: number
+          resources: Json
+          status: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          description?: string | null
+          estimated_minutes?: number
+          goal_id: string
+          id?: string
+          key_concepts?: Json
+          module_id: string
+          ordinal: number
+          resources?: Json
+          status?: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          description?: string | null
+          estimated_minutes?: number
+          goal_id?: string
+          id?: string
+          key_concepts?: Json
+          module_id?: string
+          ordinal?: number
+          resources?: Json
+          status?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "roadmap_topics_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: false
+            referencedRelation: "goals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "roadmap_topics_module_id_fkey"
+            columns: ["module_id"]
+            isOneToOne: false
+            referencedRelation: "roadmap_modules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      study_sessions: {
+        Row: {
+          ended_at: string | null
+          goal_id: string | null
+          id: string
+          minutes: number
+          started_at: string
+          topic_id: string | null
+          user_id: string
+        }
+        Insert: {
+          ended_at?: string | null
+          goal_id?: string | null
+          id?: string
+          minutes?: number
+          started_at?: string
+          topic_id?: string | null
+          user_id: string
+        }
+        Update: {
+          ended_at?: string | null
+          goal_id?: string | null
+          id?: string
+          minutes?: number
+          started_at?: string
+          topic_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "study_sessions_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: false
+            referencedRelation: "goals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "study_sessions_topic_id_fkey"
+            columns: ["topic_id"]
+            isOneToOne: false
+            referencedRelation: "roadmap_topics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
