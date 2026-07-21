@@ -132,7 +132,6 @@ Return ONLY valid json matching this TypeScript shape (no markdown, no commentar
           },
           { role: "user", content: prompt },
         ],
-        response_format: { type: "json_object" },
       }),
     });
 
@@ -143,8 +142,12 @@ Return ONLY valid json matching this TypeScript shape (no markdown, no commentar
       throw new Error(`AI request failed: ${res.status} ${body.slice(0, 200)}`);
     }
     const payload = await res.json();
-    const content = payload.choices?.[0]?.message?.content ?? "{}";
-    const parsed = JSON.parse(content) as RoadmapAI;
+    const raw: string = payload.choices?.[0]?.message?.content ?? "{}";
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+    const jsonStart = cleaned.indexOf("{");
+    const jsonEnd = cleaned.lastIndexOf("}");
+    const jsonStr = jsonStart >= 0 && jsonEnd > jsonStart ? cleaned.slice(jsonStart, jsonEnd + 1) : cleaned;
+    const parsed = JSON.parse(jsonStr) as RoadmapAI;
 
     // Persist to DB as this user
     const { supabase, userId } = context;
