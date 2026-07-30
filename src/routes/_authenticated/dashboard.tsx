@@ -189,6 +189,34 @@ function Dashboard() {
         </div>
       </section>
 
+      {/* Progress & streaks */}
+      <section className="mt-14">
+        <p className="text-xs uppercase tracking-widest text-ink-subtle">Your progress</p>
+        <h2 className="mt-2 font-display text-3xl text-ink">Consistency compounds.</h2>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+          <StreakCard
+            current={progress?.currentStreak ?? 0}
+            longest={progress?.longestStreak ?? 0}
+            studiedToday={progress?.studiedToday ?? false}
+          />
+          <WeeklyChart days={progress?.days ?? []} target={dailyTarget} />
+        </div>
+
+        <div className="mt-4 grid gap-4">
+          <ActivityHeatmap days={progress?.days ?? []} target={dailyTarget} />
+          <GoalProgress
+            completed={completed}
+            total={total}
+            totalMinutes={progress?.totalMinutes ?? 0}
+            minutesPerDay={dailyTarget}
+            remainingMinutes={remainingMinutes}
+          />
+        </div>
+      </section>
+
+
+
       {/* Roadmap */}
       <section className="mt-14">
         <div className="flex items-end justify-between">
