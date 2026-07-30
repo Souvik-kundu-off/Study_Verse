@@ -2,14 +2,16 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
-import { askTutor } from "@/lib/ai.functions";
+import { askTutor, generateQuizForTopic, generateFlashcardsForTopic, generateSmartNotes } from "@/lib/ai.functions";
 import { logActivity } from "@/lib/progress.functions";
 import { useCallback, useEffect, useRef, useState } from "react";
-
 import {
-  X, Play, Pause, RotateCcw, Sparkles, FileText, ListChecks, BookOpen,
-  Send, Loader2, CheckCircle2, Video, PenLine,
+  X, Play, Pause, RotateCcw, Sparkles, FileText, BookOpen,
+  Send, Loader2, CheckCircle2, Video, PenLine, Layers, HelpCircle, Code2, Wand2, ExternalLink, RefreshCw
 } from "lucide-react";
+import { FlashcardDeck } from "@/components/study/FlashcardDeck";
+import { QuizModal } from "@/components/study/QuizModal";
+import { CodingPlayground } from "@/components/tools/CodingPlayground";
 
 export const Route = createFileRoute("/_authenticated/focus/$topicId")({
   head: () => ({
@@ -32,7 +34,6 @@ export const Route = createFileRoute("/_authenticated/focus/$topicId")({
   component: FocusWorkspace,
 });
 
-
 type Resource = { kind: string; title: string; note?: string };
 
 function FocusWorkspace() {
@@ -40,14 +41,18 @@ function FocusWorkspace() {
   const { user } = Route.useRouteContext();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<"tutor" | "notes" | "tasks" | "resources">("tutor");
-  const [tasks, setTasks] = useState<Record<string, boolean>>({
-    "Watch lecture / read intro": false,
-    "Take notes on key concepts": false,
-    "Ask the tutor 1 question": false,
-    "Complete quick self-check": false,
-  });
 
+  const [tab, setTab] = useState<"tutor" | "notes" | "flashcards" | "quiz" | "playground" | "resources">("tutor");
+  const [generatingNotes, setGeneratingNotes] = useState(false);
+  const [generatingQuiz, setGeneratingQuiz] = useState(false);
+  const [generatingCards, setGeneratingCards] = useState(false);
+  const [showVideo, setShowVideo] = useState(true);
+
+  const genNotes = useServerFn(generateSmartNotes);
+  const genQuiz = useServerFn(generateQuizForTopic);
+  const genCards = useServerFn(generateFlashcardsForTopic);
+
+  // Topic Details
   const { data: topic } = useQuery({
     queryKey: ["topic", topicId],
     queryFn: async () => {
@@ -61,6 +66,25 @@ function FocusWorkspace() {
     },
   });
 
+  // Quizzes query
+  const { data: quizData, refetch: refetchQuiz } = useQuery({
+    queryKey: ["quiz", topicId],
+    queryFn: async () => {
+      const { data } = await supabase.from("quizzes").select("id, title, questions").eq("topic_id", topicId).maybeSingle();
+      return data;
+    },
+  });
+
+  // Flashcards query
+  const { data: cardsData, refetch: refetchCards } = useQuery({
+    queryKey: ["flashcards", topicId],
+    queryFn: async () => {
+      const { data } = await supabase.from("flashcards").select("id, front, back, box").eq("topic_id", topicId);
+      return data ?? [];
+    },
+  });
+
+  // Saved Notes Query
   const { data: noteRow } = useQuery({
     queryKey: ["note", user.id, topicId],
     queryFn: async () => {
@@ -77,10 +101,74 @@ function FocusWorkspace() {
 
   const [noteText, setNoteText] = useState("");
   useEffect(() => {
-    if (noteRow) setNoteText(noteRow.content);
+    if (noteRow?.content) setNoteText(noteRow.content);
   }, [noteRow]);
 
-  // Auto-save notes (debounced)
+  // YouTube Video Search
+  const [ytVideo, setYtVideo] = useState<{ videoId: string; title: string } | null>(null);
+  const [ytLoading, setYtLoading] = useState(false);
+
+  useEffect(() => {
+    if (!topic?.title) return;
+    const apiKey = import.meta.env.VITE_YOUTUBE_API_KEY;
+    if (!apiKey) return;
+
+    setYtLoading(true);
+    const query = `${topic.title} tutorial explanation`;
+    fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=1&q=${encodeURIComponent(query)}&type=video&key=${apiKey}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const item = data.items?.[0];
+        if (item?.id?.videoId) {
+          setYtVideo({ videoId: item.id.videoId, title: item.snippet?.title ?? topic.title });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setYtLoading(false));
+  }, [topic?.title]);
+
+  // Auto-generate AI Lesson Notes on initial load if none exist yet
+  useEffect(() => {
+    if (!topic || noteRow?.content || generatingNotes) return;
+    handleAutoNotes();
+  }, [topic, noteRow]);
+
+  async function handleAutoNotes() {
+    setGeneratingNotes(true);
+    try {
+      const res = await genNotes({ data: { topicId } });
+      setNoteText(res.content);
+      qc.invalidateQueries({ queryKey: ["note", user.id, topicId] });
+    } catch {
+      /* handle error silently */
+    } finally {
+      setGeneratingNotes(false);
+    }
+  }
+
+  // Trigger Quiz generation on tab switch if empty
+  useEffect(() => {
+    if (tab === "quiz" && !quizData && !generatingQuiz) {
+      setGeneratingQuiz(true);
+      genQuiz({ data: { topicId } })
+        .then(() => refetchQuiz())
+        .catch(() => {})
+        .finally(() => setGeneratingQuiz(false));
+    }
+  }, [tab, quizData, generatingQuiz, topicId]);
+
+  // Trigger Flashcards generation on tab switch if empty
+  useEffect(() => {
+    if (tab === "flashcards" && (!cardsData || cardsData.length === 0) && !generatingCards) {
+      setGeneratingCards(true);
+      genCards({ data: { topicId } })
+        .then(() => refetchCards())
+        .catch(() => {})
+        .finally(() => setGeneratingCards(false));
+    }
+  }, [tab, cardsData, generatingCards, topicId]);
+
+  // Auto-save personal notes (debounced)
   useEffect(() => {
     if (!noteRow && !noteText) return;
     const t = setTimeout(async () => {
@@ -95,7 +183,6 @@ function FocusWorkspace() {
   const log = useServerFn(logActivity);
   const loggedRef = useRef(false);
 
-  /** Persists the elapsed session once: study_sessions row + today's activity rollup. */
   const saveSession = useCallback(
     async (topicsCompleted: number) => {
       if (loggedRef.current) return;
@@ -144,18 +231,6 @@ function FocusWorkspace() {
     navigate({ to: "/dashboard" });
   }
 
-
-  // Enter fullscreen on mount, exit on unmount
-  useEffect(() => {
-    const el = document.documentElement;
-    el.requestFullscreen?.().catch(() => { /* user gesture may be required */ });
-    return () => {
-      if (document.fullscreenElement) {
-        document.exitFullscreen?.().catch(() => { /* ignore */ });
-      }
-    };
-  }, []);
-
   // Timer
   const [running, setRunning] = useState(true);
   const [elapsed, setElapsed] = useState(0);
@@ -177,16 +252,18 @@ function FocusWorkspace() {
 
   return (
     <div className="flex h-screen flex-col bg-background text-ink">
-      {/* Header */}
+      {/* Top Bar */}
       <header className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4 border-b border-border bg-background/95 px-6 py-3 backdrop-blur">
         <div className="min-w-0">
           <p className="truncate text-xs text-ink-subtle">{goalTitle}</p>
           <h1 className="truncate text-sm font-medium text-ink">
-            {topic?.title ?? "Loading…"}
+            {topic?.title ?? "Loading Lesson…"}
           </h1>
         </div>
+
+        {/* Timer Controls */}
         <div className="flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-sm">
-          <span className="tabular-nums text-ink">{fmt(elapsed)}</span>
+          <span className="tabular-nums font-mono text-ink">{fmt(elapsed)}</span>
           <span className="h-3 w-px bg-border" />
           <button
             onClick={() => setRunning((r) => !r)}
@@ -206,6 +283,8 @@ function FocusWorkspace() {
             <RotateCcw className="h-3.5 w-3.5" />
           </button>
         </div>
+
+        {/* Complete / Exit */}
         <div className="flex items-center gap-2">
           <button
             onClick={markComplete}
@@ -219,110 +298,216 @@ function FocusWorkspace() {
           >
             <X className="h-3.5 w-3.5" /> Exit
           </button>
-
         </div>
       </header>
 
       {/* Main split */}
       <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[1.6fr_1fr]">
-        {/* Left: primary learning area */}
-        <section className="min-h-0 overflow-auto border-b border-border md:border-b-0 md:border-r">
-          <div className="mx-auto max-w-2xl px-8 py-10">
-            <p className="text-xs uppercase tracking-widest text-ink-subtle">Now studying</p>
-            <h2 className="mt-2 font-display text-4xl text-ink">{topic?.title}</h2>
-            <p className="mt-3 text-ink-muted">{topic?.description}</p>
-
-            <div className="mt-8 flex aspect-video items-center justify-center rounded-2xl border border-border bg-ink text-background">
-              <div className="text-center">
-                <Video className="mx-auto h-8 w-8 opacity-60" />
-                <p className="mt-3 text-sm opacity-80">Lecture / reading area</p>
-                <p className="mt-1 text-xs opacity-60">
-                  Attach a video, PDF, or your own material here.
-                </p>
+        {/* Left: Primary Lesson Area */}
+        <section className="min-h-0 overflow-auto border-b border-border md:border-b-0 md:border-r p-6 md:p-10">
+          <div className="mx-auto max-w-2xl space-y-8">
+            {/* Header */}
+            <div>
+              <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-ink-subtle">
+                <span>Lesson</span>
+                <span>•</span>
+                <span>{topic?.estimated_minutes ?? 20} mins</span>
               </div>
+              <h2 className="mt-2 font-display text-3xl md:text-4xl text-ink font-semibold">{topic?.title}</h2>
+              <p className="mt-2 text-base text-ink-muted leading-relaxed">{topic?.description}</p>
             </div>
 
-            {concepts.length > 0 && (
-              <div className="mt-8">
-                <h3 className="text-sm font-medium text-ink">Key concepts</h3>
-                <ul className="mt-3 flex flex-wrap gap-2">
-                  {concepts.map((c) => (
-                    <li
-                      key={c}
-                      className="rounded-full border border-border bg-surface px-3 py-1 text-xs text-ink-muted"
-                    >
-                      {c}
-                    </li>
-                  ))}
-                </ul>
+            {/* YouTube Video Section */}
+            {ytLoading && (
+              <div className="flex aspect-video items-center justify-center rounded-2xl border border-border bg-surface text-ink-muted text-sm">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin text-brand" /> Finding best video tutorial…
               </div>
             )}
 
-            <button
-              onClick={markComplete}
-              className="mt-10 inline-flex items-center gap-2 rounded-full bg-brand px-5 py-2.5 text-sm font-medium text-brand-foreground transition hover:opacity-90 sm:hidden"
-            >
-              Mark complete <CheckCircle2 className="h-4 w-4" />
-            </button>
+            {!ytLoading && ytVideo && (
+              <div className="rounded-2xl border border-border overflow-hidden bg-black shadow-sm">
+                <div className="flex items-center justify-between bg-surface px-4 py-2 text-xs border-b border-border">
+                  <span className="inline-flex items-center gap-1.5 font-medium text-ink">
+                    <Video className="h-3.5 w-3.5 text-red-500" /> YouTube Tutorial
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setShowVideo(!showVideo)}
+                      className="text-ink-muted hover:text-ink underline"
+                    >
+                      {showVideo ? "Hide Video" : "Show Video"}
+                    </button>
+                    <a
+                      href={`https://www.youtube.com/watch?v=${ytVideo.videoId}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-ink-muted hover:text-ink"
+                    >
+                      Watch on YouTube <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                </div>
+                {showVideo && (
+                  <div className="aspect-video w-full">
+                    <iframe
+                      src={`https://www.youtube-nocookie.com/embed/${ytVideo.videoId}?autoplay=0`}
+                      title={ytVideo.title}
+                      className="h-full w-full border-0"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* AI Generated Notes / Lesson Text */}
+            <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
+              <div className="flex items-center justify-between border-b border-border pb-3">
+                <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
+                  <Sparkles className="h-4 w-4 text-brand" /> Lesson Notes & Guide
+                </h3>
+                <button
+                  onClick={handleAutoNotes}
+                  disabled={generatingNotes}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3 w-3 ${generatingNotes ? "animate-spin" : ""}`} />
+                  {generatingNotes ? "Generating..." : "Regenerate"}
+                </button>
+              </div>
+
+              {generatingNotes && (
+                <div className="py-12 text-center text-sm text-ink-muted">
+                  <Loader2 className="mx-auto h-6 w-6 animate-spin text-brand mb-2" />
+                  Generating custom structured notes for {topic?.title}…
+                </div>
+              )}
+
+              {!generatingNotes && noteText && (
+                <div className="mt-4 prose prose-sm max-w-none text-ink leading-relaxed whitespace-pre-wrap font-sans">
+                  {noteText}
+                </div>
+              )}
+
+              {!generatingNotes && !noteText && (
+                <div className="py-8 text-center text-sm text-ink-muted">
+                  <p>No lesson notes generated yet.</p>
+                  <button
+                    onClick={handleAutoNotes}
+                    className="mt-3 inline-flex items-center gap-2 rounded-full bg-brand px-4 py-2 text-xs font-medium text-brand-foreground"
+                  >
+                    <Wand2 className="h-3.5 w-3.5" /> Generate Lesson Notes
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Key Concepts */}
+            {concepts.length > 0 && (
+              <div>
+                <h3 className="text-xs uppercase tracking-widest text-ink-subtle font-medium">Key Concepts to Master</h3>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {concepts.map((c) => (
+                    <span
+                      key={c}
+                      className="inline-flex items-center rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-ink-muted"
+                    >
+                      ✨ {c}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Complete Lesson CTA */}
+            <div className="pt-4 border-t border-border flex justify-between items-center">
+              <span className="text-xs text-ink-subtle">Finished reading and practicing?</span>
+              <button
+                onClick={markComplete}
+                className="inline-flex items-center gap-2 rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-brand-foreground transition hover:opacity-90 shadow-sm"
+              >
+                Mark complete <CheckCircle2 className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </section>
 
-        {/* Right: Smart Study Panel */}
+        {/* Right: Interactive Study Panel */}
         <aside className="flex min-h-0 flex-col bg-surface">
-          <div className="flex shrink-0 border-b border-border">
+          <div className="flex shrink-0 border-b border-border overflow-x-auto">
             <TabBtn label="Tutor" icon={Sparkles} active={tab === "tutor"} onClick={() => setTab("tutor")} />
-            <TabBtn label="Notes" icon={PenLine} active={tab === "notes"} onClick={() => setTab("notes")} />
-            <TabBtn label="Tasks" icon={ListChecks} active={tab === "tasks"} onClick={() => setTab("tasks")} />
+            <TabBtn label="My Notes" icon={PenLine} active={tab === "notes"} onClick={() => setTab("notes")} />
+            <TabBtn label="Quiz" icon={HelpCircle} active={tab === "quiz"} onClick={() => setTab("quiz")} />
+            <TabBtn label="Cards" icon={Layers} active={tab === "flashcards"} onClick={() => setTab("flashcards")} />
+            <TabBtn label="Sandbox" icon={Code2} active={tab === "playground"} onClick={() => setTab("playground")} />
             <TabBtn label="Resources" icon={BookOpen} active={tab === "resources"} onClick={() => setTab("resources")} />
           </div>
 
+          {/* Tab 1: AI Tutor */}
           {tab === "tutor" && <TutorPanel topicId={topicId} />}
+
+          {/* Tab 2: Personal Notes */}
           {tab === "notes" && (
             <div className="flex min-h-0 flex-1 flex-col p-4">
               <div className="flex items-center justify-between pb-2 text-xs text-ink-subtle">
-                <span className="inline-flex items-center gap-1"><FileText className="h-3.5 w-3.5" /> Auto-saving</span>
-                <span>{noteText.length} chars</span>
+                <span className="inline-flex items-center gap-1"><FileText className="h-3.5 w-3.5" /> Auto-saving personal scratchpad</span>
               </div>
               <textarea
                 value={noteText}
                 onChange={(e) => setNoteText(e.target.value)}
-                placeholder="Take notes as you learn. Markdown supported."
+                placeholder="Write your personal notes, summaries, or questions here..."
                 className="flex-1 resize-none rounded-2xl border border-border bg-background p-4 font-mono text-sm text-ink placeholder:text-ink-subtle focus:border-ink focus:outline-none"
               />
             </div>
           )}
-          {tab === "tasks" && (
-            <div className="min-h-0 flex-1 space-y-2 overflow-auto p-4">
-              {Object.entries(tasks).map(([task, done]) => (
-                <label
-                  key={task}
-                  className="flex cursor-pointer items-center gap-3 rounded-xl border border-border bg-background px-3 py-2.5 text-sm"
-                >
-                  <input
-                    type="checkbox"
-                    checked={done}
-                    onChange={(e) => setTasks({ ...tasks, [task]: e.target.checked })}
-                    className="h-4 w-4 accent-ink"
-                  />
-                  <span className={done ? "text-ink-subtle line-through" : "text-ink"}>{task}</span>
-                </label>
-              ))}
-            </div>
+
+          {/* Tab 3: Interactive Quiz */}
+          {tab === "quiz" && (
+            <QuizModal
+              quiz={quizData as any}
+              loading={generatingQuiz}
+              onGenerate={async () => {
+                setGeneratingQuiz(true);
+                await genQuiz({ data: { topicId } });
+                refetchQuiz();
+                setGeneratingQuiz(false);
+              }}
+            />
           )}
+
+          {/* Tab 4: Flashcards */}
+          {tab === "flashcards" && (
+            <FlashcardDeck
+              cards={(cardsData as any) ?? []}
+              loading={generatingCards}
+              onGenerateMore={async () => {
+                setGeneratingCards(true);
+                await genCards({ data: { topicId } });
+                refetchCards();
+                setGeneratingCards(false);
+              }}
+            />
+          )}
+
+          {/* Tab 5: Coding Sandbox */}
+          {tab === "playground" && <CodingPlayground />}
+
+          {/* Tab 6: Resources */}
           {tab === "resources" && (
-            <div className="min-h-0 flex-1 space-y-2 overflow-auto p-4">
+            <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4">
               {resources.length === 0 && (
-                <p className="text-sm text-ink-muted">No resources yet for this topic.</p>
+                <p className="text-sm text-ink-muted">No specific external resources listed for this topic.</p>
               )}
               {resources.map((r, i) => (
-                <div key={i} className="rounded-xl border border-border bg-background p-3">
+                <div key={i} className="rounded-xl border border-border bg-background p-3.5 shadow-sm">
                   <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-surface-strong px-2 py-0.5 text-[10px] uppercase tracking-widest text-ink-muted">
+                    <span className="rounded-full bg-surface-strong px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-ink-muted">
                       {r.kind}
                     </span>
                     <span className="text-sm font-medium text-ink">{r.title}</span>
                   </div>
-                  {r.note && <p className="mt-1 text-xs text-ink-muted">{r.note}</p>}
+                  {r.note && <p className="mt-1.5 text-xs text-ink-muted leading-relaxed">{r.note}</p>}
                 </div>
               ))}
             </div>
@@ -349,7 +534,7 @@ function TabBtn({
       onClick={onClick}
       className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-3 py-3 text-xs font-medium transition ${
         active
-          ? "border-ink text-ink"
+          ? "border-ink text-ink font-semibold"
           : "border-transparent text-ink-muted hover:text-ink"
       }`}
     >
@@ -365,7 +550,7 @@ function TutorPanel({ topicId }: { topicId: string }) {
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: "assistant",
-      content: "Hey — I'm your tutor for this topic. Ask anything, or say 'explain this simply' and I'll break it down.",
+      content: "Hey — I'm your tutor for this topic. Ask me any question, or say 'explain this simply' and I'll break it down.",
     },
   ]);
   const [input, setInput] = useState("");
@@ -402,7 +587,7 @@ function TutorPanel({ topicId }: { topicId: string }) {
               className={`inline-block max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm ${
                 m.role === "user"
                   ? "bg-ink text-background"
-                  : "border border-border bg-background text-ink"
+                  : "border border-border bg-background text-ink shadow-sm"
               }`}
             >
               {m.content}

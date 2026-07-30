@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
   beforeLoad: async () => {
+    if (typeof window === "undefined") return { user: { id: "", email: "" } as any };
     const { data, error } = await supabase.auth.getUser();
     if (error || !data.user) throw redirect({ to: "/auth" });
     return { user: data.user };
@@ -36,16 +37,20 @@ function AuthedShell() {
 
   // Redirect to onboarding if not complete
   const pathname = router.state.location.pathname;
+  const pendingPathname = router.state.resolvedLocation?.pathname;
   useEffect(() => {
     if (!profile) return;
-    if (!profile.onboarding_complete && pathname !== "/onboarding") {
+    // Don't bounce back to onboarding if we're already navigating away from it
+    // (e.g. right after roadmap generation when the profile cache may be stale)
+    const navigatingAway = pendingPathname && pendingPathname !== "/onboarding" && pathname === "/onboarding";
+    if (!profile.onboarding_complete && pathname !== "/onboarding" && !navigatingAway) {
       setRouting(true);
       navigate({ to: "/onboarding" }).finally(() => setRouting(false));
     }
     if (profile.onboarding_complete && pathname === "/onboarding") {
       navigate({ to: "/dashboard" });
     }
-  }, [profile, pathname, navigate]);
+  }, [profile, pathname, pendingPathname, navigate]);
 
   async function signOut() {
     await qc.cancelQueries();

@@ -54,6 +54,8 @@ function Dashboard() {
         .select("id, title, description, category, level, minutes_per_day, deadline")
         .eq("user_id", user.id)
         .eq("is_active", true)
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
       if (error) throw error;
       return data;

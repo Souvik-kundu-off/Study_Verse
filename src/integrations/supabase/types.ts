@@ -261,6 +261,138 @@ export type Database = {
           },
         ]
       }
+      daily_missions: {
+        Row: {
+          completed_minutes: number
+          created_at: string
+          goal_id: string | null
+          id: string
+          is_completed: boolean
+          mission_date: string
+          target_minutes: number
+          tasks: Json
+          title: string
+          topic_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed_minutes?: number
+          created_at?: string
+          goal_id?: string | null
+          id?: string
+          is_completed?: boolean
+          mission_date?: string
+          target_minutes?: number
+          tasks?: Json
+          title: string
+          topic_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed_minutes?: number
+          created_at?: string
+          goal_id?: string | null
+          id?: string
+          is_completed?: boolean
+          mission_date?: string
+          target_minutes?: number
+          tasks?: Json
+          title?: string
+          topic_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      flashcards: {
+        Row: {
+          back: string
+          box: number
+          created_at: string
+          front: string
+          id: string
+          next_review_at: string
+          topic_id: string | null
+          user_id: string
+        }
+        Insert: {
+          back: string
+          box?: number
+          created_at?: string
+          front: string
+          id?: string
+          next_review_at?: string
+          topic_id?: string | null
+          user_id: string
+        }
+        Update: {
+          back?: string
+          box?: number
+          created_at?: string
+          front?: string
+          id?: string
+          next_review_at?: string
+          topic_id?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      quizzes: {
+        Row: {
+          created_at: string
+          id: string
+          questions: Json
+          title: string
+          topic_id: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          questions?: Json
+          title: string
+          topic_id?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          questions?: Json
+          title?: string
+          topic_id?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      quiz_attempts: {
+        Row: {
+          completed_at: string
+          id: string
+          quiz_id: string
+          score_percentage: number
+          user_answers: Json
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string
+          id?: string
+          quiz_id: string
+          score_percentage?: number
+          user_answers?: Json
+          user_id: string
+        }
+        Update: {
+          completed_at?: string
+          id?: string
+          quiz_id?: string
+          score_percentage?: number
+          user_answers?: Json
+          user_id?: string
+        }
+        Relationships: []
+      }
       study_sessions: {
         Row: {
           ended_at: string | null

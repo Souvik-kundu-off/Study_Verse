@@ -4,8 +4,6 @@ import { getRequest } from '@tanstack/react-start/server'
 import { createClient } from '@supabase/supabase-js'
 import type { Database } from './types'
 
-
-
 function isNewSupabaseApiKey(value: string): boolean {
   return value.startsWith('sb_publishable_') || value.startsWith('sb_secret_');
 }
@@ -30,45 +28,75 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
   };
 }
 
+/** Extract token from the incoming request.
+ *  Tries Authorization header first, then falls back to
+ *  the Supabase cookie that the browser session writes.
+ */
+function extractToken(request: ReturnType<typeof getRequest>): string | null {
+  if (!request?.headers) return null;
+
+  // 1. Explicit Authorization header (e.g. from server-to-server calls)
+  const authHeader = request.headers.get('authorization') ?? '';
+  if (authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice(7).trim();
+    if (token && token.split('.').length === 3) return token;
+  }
+
+  // 2. Cookie-based session (browser client using useServerFn)
+  const cookie = request.headers.get('cookie') ?? '';
+  // Supabase stores the access token in a cookie like:
+  //   sb-<project>-auth-token  or  sb-access-token
+  // The access_token part is a base64url-encoded JSON that contains the JWT.
+  const cookiePairs = cookie.split(';').map((c) => c.trim());
+  for (const pair of cookiePairs) {
+    const eqIdx = pair.indexOf('=');
+    if (eqIdx === -1) continue;
+    const name = pair.slice(0, eqIdx).trim();
+    const value = decodeURIComponent(pair.slice(eqIdx + 1).trim());
+
+    // sb-<ref>-auth-token stores JSON: { access_token, refresh_token, ... }
+    if (name.startsWith('sb-') && name.endsWith('-auth-token')) {
+      try {
+        const parsed = JSON.parse(value);
+        if (typeof parsed?.access_token === 'string' && parsed.access_token.split('.').length === 3) {
+          return parsed.access_token;
+        }
+      } catch {
+        // value might be a raw JWT itself (older storage format)
+        if (value.split('.').length === 3) return value;
+      }
+    }
+
+    // sb-access-token (some versions store the JWT directly)
+    if (name === 'sb-access-token' && value.split('.').length === 3) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
 export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server(
   async ({ next }) => {
     
-    const SUPABASE_URL = process.env.SUPABASE_URL;
-    const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY;
+    const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+    const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
     if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
       const missing = [
-        ...(!SUPABASE_URL ? ['SUPABASE_URL'] : []),
-        ...(!SUPABASE_PUBLISHABLE_KEY ? ['SUPABASE_PUBLISHABLE_KEY'] : []),
+        ...(!SUPABASE_URL ? ['SUPABASE_URL / VITE_SUPABASE_URL'] : []),
+        ...(!SUPABASE_PUBLISHABLE_KEY ? ['SUPABASE_PUBLISHABLE_KEY / VITE_SUPABASE_PUBLISHABLE_KEY'] : []),
       ];
-      const message = `Missing Supabase environment variable(s): ${missing.join(', ')}. Connect Supabase in Lovable Cloud.`;
+      const message = `Missing Supabase environment variable(s): ${missing.join(', ')}.`;
       console.error(`[Supabase] ${message}`);
       throw new Error(message);
     }
     
     const request = getRequest();
+    const token = extractToken(request);
 
-    if (!request?.headers) {
-      throw new Error('Unauthorized: No request headers available');
-    }
-
-    const authHeader = request.headers.get('authorization');
-
-    if (!authHeader) {
-      throw new Error('Unauthorized: No authorization header provided');
-    }
-
-    if (!authHeader.startsWith('Bearer ')) {
-      throw new Error('Unauthorized: Only Bearer tokens are supported');
-    }
-
-    const token = authHeader.replace('Bearer ', '');
     if (!token) {
-      throw new Error('Unauthorized: No token provided');
-    }
-
-    if (token.split('.').length !== 3) {
-      throw new Error('Unauthorized: Invalid token');
+      throw new Error('Unauthorized: No valid session token found. Please sign in.');
     }
 
     const supabase = createClient<Database>(
@@ -89,20 +117,16 @@ export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server
       }
     );
 
-    const { data, error } = await supabase.auth.getClaims(token);
-    if (error || !data?.claims) {
-      throw new Error('Unauthorized: Invalid token');
-    }
-
-    if (!data.claims.sub) {
-      throw new Error('Unauthorized: No user ID found in token');
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user) {
+      throw new Error('Unauthorized: Session expired or invalid. Please sign in again.');
     }
 
     return next({
       context: {
         supabase,
-        userId: data.claims.sub,
-        claims: data.claims,
+        userId: data.user.id,
+        claims: data.user,
       },
     });
   },

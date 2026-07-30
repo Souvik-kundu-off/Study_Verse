@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ArrowLeft, ArrowRight, Sparkles, Loader2 } from "lucide-react";
 import { generateRoadmap } from "@/lib/ai.functions";
@@ -60,6 +61,7 @@ type State = {
 
 function Onboarding() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const gen = useServerFn(generateRoadmap);
   const [step, setStep] = useState(0);
   const [generating, setGenerating] = useState(false);
@@ -89,6 +91,7 @@ function Onboarding() {
           learningStyle: state.learningStyle,
         },
       });
+      await qc.invalidateQueries({ queryKey: ["profile"] });
       toast.success("Your roadmap is ready.");
       navigate({ to: "/dashboard", search: { newGoal: res.goalId } });
     } catch (e) {
@@ -344,9 +347,14 @@ function GeneratingScreen() {
     "Planning revision…",
   ];
   const [i, setI] = useState(0);
-  if (typeof window !== "undefined") {
-    setTimeout(() => setI((v) => (v + 1) % messages.length), 1800);
-  }
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setI((v) => (v + 1) % messages.length);
+    }, 1800);
+    return () => clearInterval(timer);
+  }, [messages.length]);
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-6">
       <div className="max-w-md text-center">
