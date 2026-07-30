@@ -74,19 +74,10 @@ function Dashboard() {
     },
   });
 
-  const { data: sessions } = useQuery({
-    queryKey: ["sessions", user.id],
-    queryFn: async () => {
-      const since = new Date();
-      since.setDate(since.getDate() - 7);
-      const { data, error } = await supabase
-        .from("study_sessions")
-        .select("minutes, started_at")
-        .eq("user_id", user.id)
-        .gte("started_at", since.toISOString());
-      if (error) throw error;
-      return data;
-    },
+  const fetchProgress = useServerFn(getProgress);
+  const { data: progress } = useQuery({
+    queryKey: ["progress", user.id],
+    queryFn: () => fetchProgress(),
   });
 
   // Order topics by module then ordinal
@@ -98,9 +89,14 @@ function Dashboard() {
   const completed = orderedTopics.filter((t) => t.status === "completed").length;
   const total = orderedTopics.length;
   const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
+  const remainingMinutes = orderedTopics
+    .filter((t) => t.status !== "completed")
+    .reduce((s, t) => s + (t.estimated_minutes ?? 0), 0);
 
-  const weekMinutes = sessions?.reduce((s, x) => s + (x.minutes ?? 0), 0) ?? 0;
-  const streak = calcStreak(sessions?.map((s) => s.started_at) ?? []);
+  const weekMinutes = progress?.weekMinutes ?? 0;
+  const streak = progress?.currentStreak ?? 0;
+  const dailyTarget = goal?.minutes_per_day ?? 60;
+
 
   const now = new Date();
   const hour = now.getHours();
