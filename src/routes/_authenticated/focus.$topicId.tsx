@@ -1,19 +1,37 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { askTutor } from "@/lib/ai.functions";
-import { useEffect, useRef, useState } from "react";
+import { logActivity } from "@/lib/progress.functions";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   X, Play, Pause, RotateCcw, Sparkles, FileText, ListChecks, BookOpen,
-  Send, Loader2, CheckCircle2, ArrowRight, Video, PenLine,
+  Send, Loader2, CheckCircle2, Video, PenLine,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/focus/$topicId")({
-  head: () => ({ meta: [{ title: "Focus — StudyVerse" }] }),
+  head: () => ({
+    meta: [
+      { title: "Focus Session — StudyVerse" },
+      {
+        name: "description",
+        content:
+          "A distraction-free focus workspace with a session timer, notes, tasks and an AI tutor for the topic you're studying.",
+      },
+      { property: "og:title", content: "Focus Session — StudyVerse" },
+      {
+        property: "og:description",
+        content: "Deep-work mode: timer, notes, tasks and an AI tutor in one distraction-free view.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: FocusWorkspace,
 });
+
 
 type Resource = { kind: string; title: string; note?: string };
 
