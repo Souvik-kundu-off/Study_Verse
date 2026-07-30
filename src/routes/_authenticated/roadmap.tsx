@@ -4,7 +4,23 @@ import { supabase } from "@/integrations/supabase/client";
 import { CheckCircle2, Circle, RotateCcw, Target } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/roadmap")({
-  head: () => ({ meta: [{ title: "Roadmap — StudyVerse" }] }),
+  head: () => ({
+    meta: [
+      { title: "Your Learning Roadmap — StudyVerse" },
+      {
+        name: "description",
+        content:
+          "The full AI-generated roadmap for your goal, broken into progressive modules and topics you can study one at a time.",
+      },
+      { property: "og:title", content: "Your Learning Roadmap — StudyVerse" },
+      {
+        property: "og:description",
+        content: "Progressive modules and topics, generated for your specific goal.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: RoadmapPage,
 });
 

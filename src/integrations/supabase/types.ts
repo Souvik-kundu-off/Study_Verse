@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      daily_activity: {
+        Row: {
+          created_at: string
+          day: string
+          id: string
+          minutes: number
+          topics_completed: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          day?: string
+          id?: string
+          minutes?: number
+          topics_completed?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          day?: string
+          id?: string
+          minutes?: number
+          topics_completed?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       goals: {
         Row: {
           category: string | null

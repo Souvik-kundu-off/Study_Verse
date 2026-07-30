@@ -1,19 +1,37 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { askTutor } from "@/lib/ai.functions";
-import { useEffect, useRef, useState } from "react";
+import { logActivity } from "@/lib/progress.functions";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   X, Play, Pause, RotateCcw, Sparkles, FileText, ListChecks, BookOpen,
-  Send, Loader2, CheckCircle2, ArrowRight, Video, PenLine,
+  Send, Loader2, CheckCircle2, Video, PenLine,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/focus/$topicId")({
-  head: () => ({ meta: [{ title: "Focus — StudyVerse" }] }),
+  head: () => ({
+    meta: [
+      { title: "Focus Session — StudyVerse" },
+      {
+        name: "description",
+        content:
+          "A distraction-free focus workspace with a session timer, notes, tasks and an AI tutor for the topic you're studying.",
+      },
+      { property: "og:title", content: "Focus Session — StudyVerse" },
+      {
+        property: "og:description",
+        content: "Deep-work mode: timer, notes, tasks and an AI tutor in one distraction-free view.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: FocusWorkspace,
 });
+
 
 type Resource = { kind: string; title: string; note?: string };
 
@@ -74,27 +92,58 @@ function FocusWorkspace() {
     return () => clearTimeout(t);
   }, [noteText, topicId, user.id, noteRow]);
 
+  const log = useServerFn(logActivity);
+  const loggedRef = useRef(false);
+
+  /** Persists the elapsed session once: study_sessions row + today's activity rollup. */
+  const saveSession = useCallback(
+    async (topicsCompleted: number) => {
+      if (loggedRef.current) return;
+      loggedRef.current = true;
+      const minutes = Math.max(0, Math.round(elapsedRef.current / 60));
+      if (minutes === 0 && topicsCompleted === 0) return;
+      try {
+        if (topic?.goal_id) {
+          await supabase.from("study_sessions").insert({
+            user_id: user.id,
+            goal_id: topic.goal_id,
+            topic_id: topicId,
+            minutes,
+            ended_at: new Date().toISOString(),
+          });
+        }
+        await log({ data: { minutes, topicsCompleted } });
+      } catch {
+        /* never block leaving focus mode */
+      }
+    },
+    [log, topic?.goal_id, topicId, user.id],
+  );
+
+  async function exitFullscreen() {
+    if (document.fullscreenElement) {
+      try { await document.exitFullscreen(); } catch { /* ignore */ }
+    }
+  }
+
   async function markComplete() {
     await supabase
       .from("roadmap_topics")
       .update({ status: "completed", completed_at: new Date().toISOString() })
       .eq("id", topicId);
-    const minutes = Math.max(1, Math.round(elapsedRef.current / 60));
-    if (topic?.goal_id) {
-      await supabase.from("study_sessions").insert({
-        user_id: user.id,
-        goal_id: topic.goal_id,
-        topic_id: topicId,
-        minutes,
-        ended_at: new Date().toISOString(),
-      });
-    }
+    await saveSession(1);
     qc.invalidateQueries();
-    if (document.fullscreenElement) {
-      try { await document.exitFullscreen(); } catch { /* ignore */ }
-    }
+    await exitFullscreen();
     navigate({ to: "/dashboard" });
   }
+
+  async function exitFocus() {
+    await saveSession(0);
+    qc.invalidateQueries();
+    await exitFullscreen();
+    navigate({ to: "/dashboard" });
+  }
+
 
   // Enter fullscreen on mount, exit on unmount
   useEffect(() => {
@@ -164,12 +213,13 @@ function FocusWorkspace() {
           >
             <CheckCircle2 className="h-3.5 w-3.5" /> Mark complete
           </button>
-          <Link
-            to="/dashboard"
+          <button
+            onClick={exitFocus}
             className="inline-flex items-center gap-1 rounded-full border border-border px-3 py-1.5 text-xs text-ink-muted transition hover:bg-surface-strong hover:text-ink"
           >
             <X className="h-3.5 w-3.5" /> Exit
-          </Link>
+          </button>
+
         </div>
       </header>
 

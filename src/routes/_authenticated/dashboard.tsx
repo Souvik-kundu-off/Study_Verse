@@ -1,14 +1,37 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
+import { getProgress } from "@/lib/progress.functions";
+import { StreakCard } from "@/components/progress/StreakCard";
+import { ActivityHeatmap } from "@/components/progress/ActivityHeatmap";
+import { WeeklyChart } from "@/components/progress/WeeklyChart";
+import { GoalProgress } from "@/components/progress/GoalProgress";
 import { ArrowRight, Flame, Clock, Sparkles, CheckCircle2, Circle, Target, RotateCcw } from "lucide-react";
 import { z } from "zod";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   validateSearch: z.object({ newGoal: z.string().optional() }).optional(),
-  head: () => ({ meta: [{ title: "Today — StudyVerse" }] }),
+  head: () => ({
+    meta: [
+      { title: "Today's Mission — StudyVerse" },
+      {
+        name: "description",
+        content:
+          "Your personalized study dashboard: today's mission, streaks, weekly study time and roadmap progress.",
+      },
+      { property: "og:title", content: "Today's Mission — StudyVerse" },
+      {
+        property: "og:description",
+        content: "Track your streak, study time, and roadmap progress in one focused view.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: Dashboard,
 });
+
 
 type Topic = {
   id: string;
@@ -51,19 +74,10 @@ function Dashboard() {
     },
   });
 
-  const { data: sessions } = useQuery({
-    queryKey: ["sessions", user.id],
-    queryFn: async () => {
-      const since = new Date();
-      since.setDate(since.getDate() - 7);
-      const { data, error } = await supabase
-        .from("study_sessions")
-        .select("minutes, started_at")
-        .eq("user_id", user.id)
-        .gte("started_at", since.toISOString());
-      if (error) throw error;
-      return data;
-    },
+  const fetchProgress = useServerFn(getProgress);
+  const { data: progress } = useQuery({
+    queryKey: ["progress", user.id],
+    queryFn: () => fetchProgress(),
   });
 
   // Order topics by module then ordinal
@@ -75,9 +89,14 @@ function Dashboard() {
   const completed = orderedTopics.filter((t) => t.status === "completed").length;
   const total = orderedTopics.length;
   const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
+  const remainingMinutes = orderedTopics
+    .filter((t) => t.status !== "completed")
+    .reduce((s, t) => s + (t.estimated_minutes ?? 0), 0);
 
-  const weekMinutes = sessions?.reduce((s, x) => s + (x.minutes ?? 0), 0) ?? 0;
-  const streak = calcStreak(sessions?.map((s) => s.started_at) ?? []);
+  const weekMinutes = progress?.weekMinutes ?? 0;
+  const streak = progress?.currentStreak ?? 0;
+  const dailyTarget = goal?.minutes_per_day ?? 60;
+
 
   const now = new Date();
   const hour = now.getHours();
@@ -169,6 +188,34 @@ function Dashboard() {
           <StatCard label="Progress" value={`${progressPct}%`} icon={Target} sub={`${completed}/${total} topics`} />
         </div>
       </section>
+
+      {/* Progress & streaks */}
+      <section className="mt-14">
+        <p className="text-xs uppercase tracking-widest text-ink-subtle">Your progress</p>
+        <h2 className="mt-2 font-display text-3xl text-ink">Consistency compounds.</h2>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+          <StreakCard
+            current={progress?.currentStreak ?? 0}
+            longest={progress?.longestStreak ?? 0}
+            studiedToday={progress?.studiedToday ?? false}
+          />
+          <WeeklyChart days={progress?.days ?? []} target={dailyTarget} />
+        </div>
+
+        <div className="mt-4 grid gap-4">
+          <ActivityHeatmap days={progress?.days ?? []} target={dailyTarget} />
+          <GoalProgress
+            completed={completed}
+            total={total}
+            totalMinutes={progress?.totalMinutes ?? 0}
+            minutesPerDay={dailyTarget}
+            remainingMinutes={remainingMinutes}
+          />
+        </div>
+      </section>
+
+
 
       {/* Roadmap */}
       <section className="mt-14">
@@ -298,15 +345,4 @@ function formatMinutes(m: number) {
   const r = m % 60;
   if (h === 0) return `${r}m`;
   return `${h}h ${r}m`;
-}
-
-function calcStreak(dates: string[]) {
-  const days = new Set(dates.map((d) => new Date(d).toDateString()));
-  let streak = 0;
-  const cur = new Date();
-  while (days.has(cur.toDateString())) {
-    streak++;
-    cur.setDate(cur.getDate() - 1);
-  }
-  return streak;
 }

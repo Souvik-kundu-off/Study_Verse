@@ -6,7 +6,23 @@ import { ArrowLeft, ArrowRight, Sparkles, Loader2 } from "lucide-react";
 import { generateRoadmap } from "@/lib/ai.functions";
 
 export const Route = createFileRoute("/_authenticated/onboarding")({
-  head: () => ({ meta: [{ title: "Set your goal — StudyVerse" }] }),
+  head: () => ({
+    meta: [
+      { title: "Set Your Learning Goal — StudyVerse" },
+      {
+        name: "description",
+        content:
+          "Tell StudyVerse what you want to achieve and how much time you have, and get a personalized AI study roadmap.",
+      },
+      { property: "og:title", content: "Set Your Learning Goal — StudyVerse" },
+      {
+        property: "og:description",
+        content: "Answer a few questions and get a personalized AI study roadmap.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: Onboarding,
 });
 
