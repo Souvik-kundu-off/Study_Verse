@@ -346,14 +346,3 @@ function formatMinutes(m: number) {
   if (h === 0) return `${r}m`;
   return `${h}h ${r}m`;
 }
-
-function calcStreak(dates: string[]) {
-  const days = new Set(dates.map((d) => new Date(d).toDateString()));
-  let streak = 0;
-  const cur = new Date();
-  while (days.has(cur.toDateString())) {
-    streak++;
-    cur.setDate(cur.getDate() - 1);
-  }
-  return streak;
-}
