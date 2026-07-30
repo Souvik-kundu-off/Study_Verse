@@ -1,14 +1,37 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
+import { getProgress } from "@/lib/progress.functions";
+import { StreakCard } from "@/components/progress/StreakCard";
+import { ActivityHeatmap } from "@/components/progress/ActivityHeatmap";
+import { WeeklyChart } from "@/components/progress/WeeklyChart";
+import { GoalProgress } from "@/components/progress/GoalProgress";
 import { ArrowRight, Flame, Clock, Sparkles, CheckCircle2, Circle, Target, RotateCcw } from "lucide-react";
 import { z } from "zod";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   validateSearch: z.object({ newGoal: z.string().optional() }).optional(),
-  head: () => ({ meta: [{ title: "Today — StudyVerse" }] }),
+  head: () => ({
+    meta: [
+      { title: "Today's Mission — StudyVerse" },
+      {
+        name: "description",
+        content:
+          "Your personalized study dashboard: today's mission, streaks, weekly study time and roadmap progress.",
+      },
+      { property: "og:title", content: "Today's Mission — StudyVerse" },
+      {
+        property: "og:description",
+        content: "Track your streak, study time, and roadmap progress in one focused view.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: Dashboard,
 });
+
 
 type Topic = {
   id: string;
