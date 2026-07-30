@@ -92,27 +92,58 @@ function FocusWorkspace() {
     return () => clearTimeout(t);
   }, [noteText, topicId, user.id, noteRow]);
 
+  const log = useServerFn(logActivity);
+  const loggedRef = useRef(false);
+
+  /** Persists the elapsed session once: study_sessions row + today's activity rollup. */
+  const saveSession = useCallback(
+    async (topicsCompleted: number) => {
+      if (loggedRef.current) return;
+      loggedRef.current = true;
+      const minutes = Math.max(0, Math.round(elapsedRef.current / 60));
+      if (minutes === 0 && topicsCompleted === 0) return;
+      try {
+        if (topic?.goal_id) {
+          await supabase.from("study_sessions").insert({
+            user_id: user.id,
+            goal_id: topic.goal_id,
+            topic_id: topicId,
+            minutes,
+            ended_at: new Date().toISOString(),
+          });
+        }
+        await log({ data: { minutes, topicsCompleted } });
+      } catch {
+        /* never block leaving focus mode */
+      }
+    },
+    [log, topic?.goal_id, topicId, user.id],
+  );
+
+  async function exitFullscreen() {
+    if (document.fullscreenElement) {
+      try { await document.exitFullscreen(); } catch { /* ignore */ }
+    }
+  }
+
   async function markComplete() {
     await supabase
       .from("roadmap_topics")
       .update({ status: "completed", completed_at: new Date().toISOString() })
       .eq("id", topicId);
-    const minutes = Math.max(1, Math.round(elapsedRef.current / 60));
-    if (topic?.goal_id) {
-      await supabase.from("study_sessions").insert({
-        user_id: user.id,
-        goal_id: topic.goal_id,
-        topic_id: topicId,
-        minutes,
-        ended_at: new Date().toISOString(),
-      });
-    }
+    await saveSession(1);
     qc.invalidateQueries();
-    if (document.fullscreenElement) {
-      try { await document.exitFullscreen(); } catch { /* ignore */ }
-    }
+    await exitFullscreen();
     navigate({ to: "/dashboard" });
   }
+
+  async function exitFocus() {
+    await saveSession(0);
+    qc.invalidateQueries();
+    await exitFullscreen();
+    navigate({ to: "/dashboard" });
+  }
+
 
   // Enter fullscreen on mount, exit on unmount
   useEffect(() => {
