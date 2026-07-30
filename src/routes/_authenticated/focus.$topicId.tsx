@@ -213,12 +213,13 @@ function FocusWorkspace() {
           >
             <CheckCircle2 className="h-3.5 w-3.5" /> Mark complete
           </button>
-          <Link
-            to="/dashboard"
+          <button
+            onClick={exitFocus}
             className="inline-flex items-center gap-1 rounded-full border border-border px-3 py-1.5 text-xs text-ink-muted transition hover:bg-surface-strong hover:text-ink"
           >
             <X className="h-3.5 w-3.5" /> Exit
-          </Link>
+          </button>
+
         </div>
       </header>
 
