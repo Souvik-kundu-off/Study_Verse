@@ -5,13 +5,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { askTutor, generateQuizForTopic, generateFlashcardsForTopic, generateSmartNotes } from "@/lib/ai.functions";
 import { logActivity } from "@/lib/progress.functions";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
-  X, Play, Pause, RotateCcw, Sparkles, FileText, BookOpen,
-  Send, Loader2, CheckCircle2, Video, PenLine, Layers, HelpCircle, Code2, Wand2, ExternalLink, RefreshCw
+  X, Play, Pause, RotateCcw, FileText, BookOpen, Bot,
+  Send, Loader2, CheckCircle2, Video, PenLine, Layers, HelpCircle, Code2, Wand2, ExternalLink, RefreshCw, Maximize2, Minimize2, Save, Search, Download, Trash2
 } from "lucide-react";
 import { FlashcardDeck } from "@/components/study/FlashcardDeck";
 import { QuizModal } from "@/components/study/QuizModal";
 import { CodingPlayground } from "@/components/tools/CodingPlayground";
+import { FormattedText } from "@/components/ui/FormattedText";
 
 export const Route = createFileRoute("/_authenticated/focus/$topicId")({
   head: () => ({
@@ -52,6 +54,15 @@ function FocusWorkspace() {
   const genQuiz = useServerFn(generateQuizForTopic);
   const genCards = useServerFn(generateFlashcardsForTopic);
 
+  // Auto trigger fullscreen focus mode on lesson start
+  useEffect(() => {
+    if (!document.fullscreenElement) {
+      try {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } catch {}
+    }
+  }, []);
+
   // Topic Details
   const { data: topic } = useQuery({
     queryKey: ["topic", topicId],
@@ -84,13 +95,13 @@ function FocusWorkspace() {
     },
   });
 
-  // Saved Notes Query
+  // Saved Notes Query (Personal notes & AI Lesson summary)
   const { data: noteRow } = useQuery({
     queryKey: ["note", user.id, topicId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("notes")
-        .select("id, content")
+        .select("id, content, ai_summary")
         .eq("user_id", user.id)
         .eq("topic_id", topicId)
         .maybeSingle();
@@ -99,9 +110,16 @@ function FocusWorkspace() {
     },
   });
 
-  const [noteText, setNoteText] = useState("");
+  const [aiLessonGuide, setAiLessonGuide] = useState("");
+  const [personalNotes, setPersonalNotes] = useState("");
+
   useEffect(() => {
-    if (noteRow?.content) setNoteText(noteRow.content);
+    if (noteRow?.ai_summary) {
+      setAiLessonGuide(noteRow.ai_summary);
+    }
+    if (noteRow?.content) {
+      setPersonalNotes(noteRow.content);
+    }
   }, [noteRow]);
 
   // YouTube Video Search
@@ -129,15 +147,20 @@ function FocusWorkspace() {
 
   // Auto-generate AI Lesson Notes on initial load if none exist yet
   useEffect(() => {
-    if (!topic || noteRow?.content || generatingNotes) return;
+    if (!topic || aiLessonGuide || generatingNotes) return;
     handleAutoNotes();
-  }, [topic, noteRow]);
+  }, [topic, aiLessonGuide]);
 
   async function handleAutoNotes() {
     setGeneratingNotes(true);
     try {
       const res = await genNotes({ data: { topicId } });
-      setNoteText(res.content);
+      setAiLessonGuide(res.content);
+      // Save AI lesson guide in ai_summary field
+      await supabase.from("notes").upsert(
+        { user_id: user.id, topic_id: topicId, ai_summary: res.content },
+        { onConflict: "user_id,topic_id" }
+      );
       qc.invalidateQueries({ queryKey: ["note", user.id, topicId] });
     } catch {
       /* handle error silently */
@@ -168,17 +191,27 @@ function FocusWorkspace() {
     }
   }, [tab, cardsData, generatingCards, topicId]);
 
-  // Auto-save personal notes (debounced)
-  useEffect(() => {
-    if (!noteRow && !noteText) return;
-    const t = setTimeout(async () => {
-      await supabase.from("notes").upsert(
-        { user_id: user.id, topic_id: topicId, content: noteText },
-        { onConflict: "user_id,topic_id" },
-      );
-    }, 800);
-    return () => clearTimeout(t);
-  }, [noteText, topicId, user.id, noteRow]);
+  const handleDownloadPersonalNotes = () => {
+    if (!personalNotes.trim()) {
+      toast.error("No personal notes to download.");
+      return;
+    }
+    const blob = new Blob([personalNotes], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${topic?.title ?? "study"}-notes.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Downloaded your personal notes!");
+  };
+
+  const handleClearPersonalNotes = async () => {
+    if (!personalNotes) return;
+    setPersonalNotes("");
+    await supabase.from("notes").update({ content: "" }).eq("user_id", user.id).eq("topic_id", topicId);
+    toast.success("Cleared personal notes.");
+  };
 
   const log = useServerFn(logActivity);
   const loggedRef = useRef(false);
@@ -284,8 +317,22 @@ function FocusWorkspace() {
           </button>
         </div>
 
-        {/* Complete / Exit */}
+        {/* Complete / Fullscreen / Exit */}
         <div className="flex items-center gap-2">
+          <button
+            onClick={async () => {
+              if (!document.fullscreenElement) {
+                try { await document.documentElement.requestFullscreen(); } catch {}
+              } else {
+                try { await document.exitFullscreen(); } catch {}
+              }
+            }}
+            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-ink-muted transition hover:bg-surface-strong hover:text-ink"
+            title="Toggle Distraction-Free Full Screen Focus Mode"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Focus Fullscreen</span>
+          </button>
           <button
             onClick={markComplete}
             className="hidden items-center gap-1.5 rounded-full bg-brand px-4 py-1.5 text-xs font-medium text-brand-foreground transition hover:opacity-90 sm:inline-flex"
@@ -365,7 +412,7 @@ function FocusWorkspace() {
             <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
               <div className="flex items-center justify-between border-b border-border pb-3">
                 <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
-                  <Sparkles className="h-4 w-4 text-brand" /> Lesson Notes & Guide
+                  <BookOpen className="h-4 w-4 text-brand" /> Lesson Notes & Guide
                 </h3>
                 <button
                   onClick={handleAutoNotes}
@@ -384,13 +431,11 @@ function FocusWorkspace() {
                 </div>
               )}
 
-              {!generatingNotes && noteText && (
-                <div className="mt-4 prose prose-sm max-w-none text-ink leading-relaxed whitespace-pre-wrap font-sans">
-                  {noteText}
-                </div>
+              {!generatingNotes && aiLessonGuide && (
+                <FormattedText content={aiLessonGuide} className="mt-4" />
               )}
 
-              {!generatingNotes && !noteText && (
+              {!generatingNotes && !aiLessonGuide && (
                 <div className="py-8 text-center text-sm text-ink-muted">
                   <p>No lesson notes generated yet.</p>
                   <button
@@ -413,7 +458,7 @@ function FocusWorkspace() {
                       key={c}
                       className="inline-flex items-center rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-ink-muted"
                     >
-                      ✨ {c}
+                      🔑 {c}
                     </span>
                   ))}
                 </div>
@@ -436,7 +481,7 @@ function FocusWorkspace() {
         {/* Right: Interactive Study Panel */}
         <aside className="flex min-h-0 flex-col bg-surface">
           <div className="flex shrink-0 border-b border-border overflow-x-auto">
-            <TabBtn label="Tutor" icon={Sparkles} active={tab === "tutor"} onClick={() => setTab("tutor")} />
+            <TabBtn label="Tutor" icon={Bot} active={tab === "tutor"} onClick={() => setTab("tutor")} />
             <TabBtn label="My Notes" icon={PenLine} active={tab === "notes"} onClick={() => setTab("notes")} />
             <TabBtn label="Quiz" icon={HelpCircle} active={tab === "quiz"} onClick={() => setTab("quiz")} />
             <TabBtn label="Cards" icon={Layers} active={tab === "flashcards"} onClick={() => setTab("flashcards")} />
@@ -447,17 +492,49 @@ function FocusWorkspace() {
           {/* Tab 1: AI Tutor */}
           {tab === "tutor" && <TutorPanel topicId={topicId} />}
 
-          {/* Tab 2: Personal Notes */}
+          {/* Tab 2: Personal Student Notes */}
           {tab === "notes" && (
-            <div className="flex min-h-0 flex-1 flex-col p-4">
-              <div className="flex items-center justify-between pb-2 text-xs text-ink-subtle">
-                <span className="inline-flex items-center gap-1"><FileText className="h-3.5 w-3.5" /> Auto-saving personal scratchpad</span>
+            <div className="flex min-h-0 flex-1 flex-col p-4 space-y-3">
+              <div className="flex items-center justify-between pb-1 text-xs text-ink-subtle">
+                <span className="inline-flex items-center gap-1 font-medium">
+                  <PenLine className="h-3.5 w-3.5 text-indigo-500" /> Student Personal Notebook
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={handleDownloadPersonalNotes}
+                    className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-[11px] font-medium text-ink-muted hover:text-ink transition"
+                    title="Download notes to file"
+                  >
+                    <Download className="h-3 w-3" /> Export
+                  </button>
+                  {personalNotes && (
+                    <button
+                      onClick={handleClearPersonalNotes}
+                      className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-[11px] font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition"
+                      title="Clear personal notes"
+                    >
+                      <Trash2 className="h-3 w-3" /> Clear
+                    </button>
+                  )}
+                  <button
+                    onClick={async () => {
+                      await supabase.from("notes").upsert(
+                        { user_id: user.id, topic_id: topicId, content: personalNotes },
+                        { onConflict: "user_id,topic_id" }
+                      );
+                      toast.success("Saved personal notes!");
+                    }}
+                    className="inline-flex items-center gap-1 rounded-full bg-ink px-3 py-1 text-xs font-semibold text-background hover:opacity-90 transition shadow-sm"
+                  >
+                    <Save className="h-3 w-3" /> Save Notes
+                  </button>
+                </div>
               </div>
               <textarea
-                value={noteText}
-                onChange={(e) => setNoteText(e.target.value)}
-                placeholder="Write your personal notes, summaries, or questions here..."
-                className="flex-1 resize-none rounded-2xl border border-border bg-background p-4 font-mono text-sm text-ink placeholder:text-ink-subtle focus:border-ink focus:outline-none"
+                value={personalNotes}
+                onChange={(e) => setPersonalNotes(e.target.value)}
+                placeholder="Type your own personal takeaways, formulas, or questions here to review later... (This notebook is private to you)"
+                className="flex-1 resize-none rounded-2xl border border-border bg-background p-4 font-sans text-sm text-ink placeholder:text-ink-subtle focus:border-ink focus:outline-none"
               />
             </div>
           )}
@@ -493,23 +570,54 @@ function FocusWorkspace() {
           {/* Tab 5: Coding Sandbox */}
           {tab === "playground" && <CodingPlayground />}
 
-          {/* Tab 6: Resources */}
+          {/* Tab 6: Clickable Interactive Resources */}
           {tab === "resources" && (
             <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4">
               {resources.length === 0 && (
                 <p className="text-sm text-ink-muted">No specific external resources listed for this topic.</p>
               )}
-              {resources.map((r, i) => (
-                <div key={i} className="rounded-xl border border-border bg-background p-3.5 shadow-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-surface-strong px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-ink-muted">
-                      {r.kind}
-                    </span>
-                    <span className="text-sm font-medium text-ink">{r.title}</span>
+              {resources.map((r, i) => {
+                const searchQuery = encodeURIComponent(`${topic?.title ?? ""} ${r.title}`);
+                return (
+                  <div key={i} className="rounded-xl border border-border bg-background p-3.5 shadow-sm space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-full bg-surface-strong px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-ink-muted">
+                          {r.kind}
+                        </span>
+                        <span className="text-sm font-semibold text-ink">{r.title}</span>
+                      </div>
+                    </div>
+                    {r.note && <p className="text-xs text-ink-muted leading-relaxed">{r.note}</p>}
+                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/50">
+                      <a
+                        href={`https://www.youtube.com/results?search_query=${searchQuery}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 rounded-md bg-red-50 dark:bg-red-950/40 px-2.5 py-1 text-[11px] font-medium text-red-600 dark:text-red-400 hover:bg-red-100 transition"
+                      >
+                        <Video className="w-3 h-3" /> YouTube
+                      </a>
+                      <a
+                        href={`https://www.google.com/search?q=${searchQuery}+documentation`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 rounded-md bg-indigo-50 dark:bg-indigo-950/40 px-2.5 py-1 text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition"
+                      >
+                        <Search className="w-3 h-3" /> Docs Search
+                      </a>
+                      <a
+                        href={`https://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(r.title)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-[11px] font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200 transition"
+                      >
+                        <BookOpen className="w-3 h-3" /> Wikipedia
+                      </a>
+                    </div>
                   </div>
-                  {r.note && <p className="mt-1.5 text-xs text-ink-muted leading-relaxed">{r.note}</p>}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </aside>
@@ -584,13 +692,17 @@ function TutorPanel({ topicId }: { topicId: string }) {
         {messages.map((m, i) => (
           <div key={i} className={m.role === "user" ? "text-right" : ""}>
             <div
-              className={`inline-block max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm ${
+              className={`inline-block max-w-[88%] rounded-2xl px-4 py-3 text-sm ${
                 m.role === "user"
-                  ? "bg-ink text-background"
-                  : "border border-border bg-background text-ink shadow-sm"
+                  ? "bg-ink text-background whitespace-pre-wrap"
+                  : "border border-border bg-background text-ink shadow-sm text-left"
               }`}
             >
-              {m.content}
+              {m.role === "user" ? (
+                m.content
+              ) : (
+                <FormattedText content={m.content} />
+              )}
             </div>
           </div>
         ))}

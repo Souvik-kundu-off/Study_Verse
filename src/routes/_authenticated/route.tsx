@@ -1,7 +1,7 @@
 import { createFileRoute, redirect, Outlet, Link, useRouter, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useState } from "react";
-import { Sparkles, LogOut, LayoutDashboard, Target } from "lucide-react";
+import { GraduationCap, LogOut, LayoutDashboard, Target } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -71,7 +71,7 @@ function AuthedShell() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
           <Link to="/dashboard" className="flex items-center gap-2">
             <div className="grid h-7 w-7 place-items-center rounded-full bg-ink text-background">
-              <Sparkles className="h-3.5 w-3.5" />
+              <GraduationCap className="h-4 w-4" />
             </div>
             <span className="font-display text-lg text-ink">StudyVerse</span>
           </Link>

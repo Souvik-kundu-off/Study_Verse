@@ -59,6 +59,9 @@ export type Database = {
           title: string
           updated_at: string
           user_id: string
+          time_slot_preference: string | null
+          syllabus_text: string | null
+          source_materials: Json | null
         }
         Insert: {
           category?: string | null
@@ -74,6 +77,9 @@ export type Database = {
           title: string
           updated_at?: string
           user_id: string
+          time_slot_preference?: string | null
+          syllabus_text?: string | null
+          source_materials?: Json | null
         }
         Update: {
           category?: string | null
@@ -89,12 +95,16 @@ export type Database = {
           title?: string
           updated_at?: string
           user_id?: string
+          time_slot_preference?: string | null
+          syllabus_text?: string | null
+          source_materials?: Json | null
         }
         Relationships: []
       }
       notes: {
         Row: {
           content: string
+          ai_summary: string | null
           created_at: string
           id: string
           topic_id: string | null
@@ -103,6 +113,7 @@ export type Database = {
         }
         Insert: {
           content?: string
+          ai_summary?: string | null
           created_at?: string
           id?: string
           topic_id?: string | null
@@ -111,6 +122,7 @@ export type Database = {
         }
         Update: {
           content?: string
+          ai_summary?: string | null
           created_at?: string
           id?: string
           topic_id?: string | null

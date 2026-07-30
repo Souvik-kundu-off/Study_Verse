@@ -7,7 +7,9 @@ import { StreakCard } from "@/components/progress/StreakCard";
 import { ActivityHeatmap } from "@/components/progress/ActivityHeatmap";
 import { WeeklyChart } from "@/components/progress/WeeklyChart";
 import { GoalProgress } from "@/components/progress/GoalProgress";
-import { ArrowRight, Flame, Clock, Sparkles, CheckCircle2, Circle, Target, RotateCcw } from "lucide-react";
+import { useState, useEffect } from "react";
+import { CreateTrackModal } from "@/components/study/CreateTrackModal";
+import { ArrowRight, Flame, Clock, Bot, CheckCircle2, Circle, Target, RotateCcw, Plus, BookMarked, Sunrise, Sun, Sunset, Moon } from "lucide-react";
 import { z } from "zod";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -43,33 +45,56 @@ type Topic = {
   module_id: string;
 };
 
+type Goal = {
+  id: string;
+  title: string;
+  description: string | null;
+  category: string | null;
+  level: string;
+  minutes_per_day: number;
+  deadline: string | null;
+  time_slot_preference?: string | null;
+  is_active: boolean;
+};
+
 function Dashboard() {
   const { user } = Route.useRouteContext();
+  const search = Route.useSearch();
+  const [selectedGoalId, setSelectedGoalId] = useState<string | null>(search?.newGoal ?? null);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
 
-  const { data: goal } = useQuery({
-    queryKey: ["active-goal", user.id],
+  // 1. Fetch all goals of user (Multi-Subject parallel tracks)
+  const { data: allGoals } = useQuery({
+    queryKey: ["all-goals", user.id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("goals")
-        .select("id, title, description, category, level, minutes_per_day, deadline")
+        .select("id, title, description, category, level, minutes_per_day, deadline, time_slot_preference, is_active")
         .eq("user_id", user.id)
-        .eq("is_active", true)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .order("created_at", { ascending: false });
       if (error) throw error;
-      return data;
+      return data as Goal[];
     },
   });
 
+  // Auto select active or first goal if not set
+  useEffect(() => {
+    if (allGoals && allGoals.length > 0 && !selectedGoalId) {
+      const active = allGoals.find((g) => g.is_active) ?? allGoals[0];
+      setSelectedGoalId(active.id);
+    }
+  }, [allGoals, selectedGoalId]);
+
+  const activeGoal = allGoals?.find((g) => g.id === selectedGoalId) ?? allGoals?.[0];
+
   const { data: topics } = useQuery({
-    enabled: !!goal?.id,
-    queryKey: ["goal-topics", goal?.id],
+    enabled: !!activeGoal?.id,
+    queryKey: ["goal-topics", activeGoal?.id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("roadmap_topics")
         .select("id, title, description, estimated_minutes, status, ordinal, module_id")
-        .eq("goal_id", goal!.id)
+        .eq("goal_id", activeGoal!.id)
         .order("ordinal", { ascending: true });
       if (error) throw error;
       return data as Topic[];
@@ -97,13 +122,22 @@ function Dashboard() {
 
   const weekMinutes = progress?.weekMinutes ?? 0;
   const streak = progress?.currentStreak ?? 0;
-  const dailyTarget = goal?.minutes_per_day ?? 60;
-
+  const dailyTarget = activeGoal?.minutes_per_day ?? 60;
 
   const now = new Date();
   const hour = now.getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const firstName = (user.user_metadata?.full_name ?? user.email ?? "").toString().split(" ")[0]?.split("@")[0];
+
+  const getTimeSlotIcon = (slot?: string | null) => {
+    switch (slot) {
+      case "morning": return <Sunrise className="w-3.5 h-3.5 text-amber-500" />;
+      case "afternoon": return <Sun className="w-3.5 h-3.5 text-orange-500" />;
+      case "evening": return <Sunset className="w-3.5 h-3.5 text-rose-500" />;
+      case "night": return <Moon className="w-3.5 h-3.5 text-indigo-400" />;
+      default: return <BookMarked className="w-3.5 h-3.5 text-emerald-500" />;
+    }
+  };
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-8 md:py-12">
@@ -124,13 +158,56 @@ function Dashboard() {
         </div>
       </div>
 
+      {/* Multi-Subject Parallel Track Switcher */}
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wider text-ink-subtle mr-1">
+            Active Tracks:
+          </span>
+          {allGoals?.map((g) => {
+            const isSelected = g.id === activeGoal?.id;
+            return (
+              <button
+                key={g.id}
+                onClick={() => setSelectedGoalId(g.id)}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition ${
+                  isSelected
+                    ? "bg-ink text-background shadow-sm"
+                    : "bg-surface text-ink-muted hover:border-ink/40 border border-border"
+                }`}
+              >
+                {getTimeSlotIcon(g.time_slot_preference)}
+                <span>{g.title}</span>
+                {g.time_slot_preference && g.time_slot_preference !== "flexible" && (
+                  <span className="opacity-75 text-[10px] capitalize">({g.time_slot_preference})</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          onClick={() => setCreateModalOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition shadow-sm"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Add Subject Track
+        </button>
+      </div>
+
+      <CreateTrackModal
+        open={createModalOpen}
+        onOpenChange={setCreateModalOpen}
+        onSuccess={(newGoalId) => setSelectedGoalId(newGoalId)}
+      />
+
       {/* Today's Mission */}
-      <section className="mt-8 grid gap-6 md:grid-cols-[1.5fr_1fr]">
+      <section className="mt-6 grid gap-6 md:grid-cols-[1.5fr_1fr]">
         <div className="surface-card p-8">
           {currentTopic ? (
             <>
               <p className="text-xs uppercase tracking-widest text-ink-subtle">
-                Continue · {goal?.title}
+                Continue · {activeGoal?.title}
               </p>
               <h2 className="mt-3 font-display text-3xl text-ink md:text-4xl">
                 {currentTopic.title}
@@ -150,20 +227,30 @@ function Dashboard() {
                 <Link
                   to="/focus/$topicId"
                   params={{ topicId: currentTopic.id }}
-                  className="inline-flex items-center gap-2 rounded-full bg-ink px-6 py-3 text-sm font-medium text-background transition hover:opacity-90"
+                  onClick={() => {
+                    if (!document.fullscreenElement) {
+                      try { document.documentElement.requestFullscreen().catch(() => {}); } catch {}
+                    }
+                  }}
+                  className="inline-flex items-center gap-2 rounded-full bg-ink px-6 py-3 text-sm font-medium text-background transition hover:opacity-90 shadow-sm"
                 >
-                  Continue learning <ArrowRight className="h-4 w-4" />
+                  Start Lesson / Continue Learning <ArrowRight className="h-4 w-4" />
                 </Link>
                 <Link
                   to="/focus/$topicId"
                   params={{ topicId: currentTopic.id }}
+                  onClick={() => {
+                    if (!document.fullscreenElement) {
+                      try { document.documentElement.requestFullscreen().catch(() => {}); } catch {}
+                    }
+                  }}
                   className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-6 py-3 text-sm font-medium text-ink transition hover:bg-surface-strong"
                 >
-                  <Sparkles className="h-4 w-4" /> Ask tutor
+                  <Bot className="h-4 w-4" /> Ask tutor
                 </Link>
               </div>
             </>
-          ) : goal ? (
+          ) : activeGoal ? (
             <div>
               <p className="text-xs uppercase tracking-widest text-ink-subtle">All done</p>
               <h2 className="mt-3 font-display text-3xl text-ink">You've completed your roadmap.</h2>
@@ -223,20 +310,20 @@ function Dashboard() {
       <section className="mt-14">
         <div className="flex items-end justify-between">
           <div>
-            <p className="text-xs uppercase tracking-widest text-ink-subtle">Your roadmap</p>
+            <p className="text-xs uppercase tracking-widest text-ink-subtle">Active Subject Roadmap</p>
             <h2 className="mt-2 font-display text-3xl text-ink">
-              {goal?.title ?? "Your journey"}
+              {activeGoal?.title ?? "Your journey"}
             </h2>
           </div>
           <button
-            onClick={() => (window.location.href = "/onboarding")}
+            onClick={() => setCreateModalOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-ink-muted transition hover:text-ink"
           >
-            <RotateCcw className="h-3.5 w-3.5" /> New goal
+            <Plus className="h-3.5 w-3.5" /> Add subject
           </button>
         </div>
 
-        <ModuleList goalId={goal?.id ?? null} />
+        <ModuleList goalId={activeGoal?.id ?? null} />
       </section>
     </main>
   );

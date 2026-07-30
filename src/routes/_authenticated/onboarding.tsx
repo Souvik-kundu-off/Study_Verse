@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowRight, Sparkles, Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, GraduationCap, Compass, Loader2 } from "lucide-react";
 import { generateRoadmap } from "@/lib/ai.functions";
 
 export const Route = createFileRoute("/_authenticated/onboarding")({
@@ -57,6 +57,8 @@ type State = {
   minutesPerDay: number;
   deadline: string;
   learningStyle: string;
+  syllabusText: string;
+  timeSlotPreference: "morning" | "afternoon" | "evening" | "night" | "flexible";
 };
 
 function Onboarding() {
@@ -73,9 +75,11 @@ function Onboarding() {
     minutesPerDay: 60,
     deadline: "",
     learningStyle: "Mixed",
+    syllabusText: "",
+    timeSlotPreference: "flexible",
   });
 
-  const steps = ["Goal", "Category", "Level", "Time", "Style"];
+  const steps = ["Goal", "Category", "Level", "Time", "Style", "Syllabus"];
 
   async function handleGenerate() {
     setGenerating(true);
@@ -89,6 +93,8 @@ function Onboarding() {
           minutesPerDay: state.minutesPerDay,
           deadline: state.deadline || null,
           learningStyle: state.learningStyle,
+          syllabusText: state.syllabusText.trim() || undefined,
+          timeSlotPreference: state.timeSlotPreference,
         },
       });
       await qc.invalidateQueries({ queryKey: ["profile"] });
@@ -113,7 +119,7 @@ function Onboarding() {
         <div className="flex items-center justify-between py-6">
           <div className="flex items-center gap-2">
             <div className="grid h-7 w-7 place-items-center rounded-full bg-ink text-background">
-              <Sparkles className="h-3.5 w-3.5" />
+              <GraduationCap className="h-4 w-4" />
             </div>
             <span className="font-display text-lg text-ink">StudyVerse</span>
           </div>
@@ -241,7 +247,7 @@ function Onboarding() {
 
           {step === 4 && (
             <StepShell
-              eyebrow="Step 5 of 5"
+              eyebrow="Step 5 of 6"
               title="How do you learn best?"
               subtitle="Your roadmap adapts to your style."
             >
@@ -254,6 +260,57 @@ function Onboarding() {
                     label={s}
                   />
                 ))}
+              </div>
+            </StepShell>
+          )}
+
+          {step === 5 && (
+            <StepShell
+              eyebrow="Step 6 of 6"
+              title="Got a syllabus or study materials?"
+              subtitle="Paste your curriculum or attach notes to ground your roadmap in exact topics (Optional)."
+            >
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                    Paste Syllabus or Chapter List
+                  </label>
+                  <textarea
+                    value={state.syllabusText}
+                    onChange={(e) => setState({ ...state, syllabusText: e.target.value })}
+                    placeholder="e.g. Chapter 1: Newton's Laws, Chapter 2: Work & Energy, Chapter 3: Rotational Motion..."
+                    rows={4}
+                    className="mt-1.5 w-full rounded-2xl border border-border bg-background p-4 text-sm text-ink placeholder:text-ink-subtle focus:border-ink focus:outline-none font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+                    Preferred Daily Schedule Slot
+                  </label>
+                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                    {[
+                      { id: "morning", label: "Morning 🌅" },
+                      { id: "afternoon", label: "Afternoon ☀️" },
+                      { id: "evening", label: "Evening 🌆" },
+                      { id: "night", label: "Night 🌙" },
+                      { id: "flexible", label: "Flexible ⚡" },
+                    ].map((slot) => (
+                      <button
+                        key={slot.id}
+                        type="button"
+                        onClick={() => setState({ ...state, timeSlotPreference: slot.id as any })}
+                        className={`rounded-xl border p-3 text-center text-xs font-medium transition ${
+                          state.timeSlotPreference === slot.id
+                            ? "border-ink bg-surface-strong text-ink font-semibold"
+                            : "border-border bg-background text-ink-muted hover:border-ink/40"
+                        }`}
+                      >
+                        {slot.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </StepShell>
           )}
@@ -280,7 +337,7 @@ function Onboarding() {
               onClick={handleGenerate}
               className="inline-flex items-center gap-2 rounded-full bg-brand px-5 py-2.5 text-sm font-medium text-brand-foreground transition hover:opacity-90"
             >
-              Build my roadmap <Sparkles className="h-4 w-4" />
+              Build my roadmap <Compass className="h-4 w-4" />
             </button>
           )}
         </div>

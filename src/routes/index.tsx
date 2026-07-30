@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowRight, Sparkles, Focus, BookOpen, Brain, Target } from "lucide-react";
+import { ArrowRight, GraduationCap, Focus, BookOpen, Brain, Target } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   component: Landing,
@@ -24,7 +24,7 @@ function Landing() {
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
         <Link to="/" className="flex items-center gap-2">
           <div className="grid h-8 w-8 place-items-center rounded-full bg-ink text-background">
-            <Sparkles className="h-4 w-4" />
+            <GraduationCap className="h-4 w-4" />
           </div>
           <span className="font-display text-xl">StudyVerse</span>
         </Link>
@@ -179,7 +179,7 @@ function Landing() {
                 body: "Auto-generated summaries from lectures. Highlight anything to expand or simplify.",
               },
               {
-                icon: Sparkles,
+                icon: Brain,
                 title: "Smart revision",
                 body: "Weak topics resurface automatically. Your dashboard tells you exactly what to revise today.",
               },

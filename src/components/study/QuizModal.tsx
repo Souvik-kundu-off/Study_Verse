@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CheckCircle2, XCircle, Sparkles, Trophy, ArrowRight, RotateCcw } from "lucide-react";
+import { CheckCircle2, XCircle, HelpCircle, Trophy, ArrowRight, RotateCcw, BrainCircuit } from "lucide-react";
 
 type Question = {
   question: string;
@@ -34,7 +34,7 @@ export function QuizModal({
   if (loading) {
     return (
       <div className="flex h-64 flex-col items-center justify-center p-6 text-center text-sm text-ink-muted">
-        <Sparkles className="h-6 w-6 animate-spin text-brand mb-2" /> Generating adaptive quiz questions…
+        <BrainCircuit className="h-6 w-6 animate-spin text-brand mb-2" /> Generating adaptive quiz questions…
       </div>
     );
   }
@@ -48,7 +48,7 @@ export function QuizModal({
             onClick={onGenerate}
             className="mt-4 inline-flex items-center gap-2 rounded-full bg-brand px-4 py-2 text-xs font-medium text-brand-foreground transition hover:opacity-90"
           >
-            <Sparkles className="h-3.5 w-3.5" /> Generate AI Quiz
+            <HelpCircle className="h-3.5 w-3.5" /> Generate Practice Quiz
           </button>
         )}
       </div>

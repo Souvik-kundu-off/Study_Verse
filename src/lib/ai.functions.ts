@@ -10,6 +10,8 @@ const roadmapInput = z.object({
   minutesPerDay: z.number().int().min(15).max(480),
   deadline: z.string().nullable().optional(),
   learningStyle: z.string().max(80).optional(),
+  syllabusText: z.string().max(10000).optional(),
+  timeSlotPreference: z.enum(["morning", "afternoon", "evening", "night", "flexible"]).optional(),
 });
 
 const RoadmapSchema = {
@@ -209,6 +211,8 @@ ${data.category ? `Category: ${data.category}` : ""}
 ${data.deadline ? `Deadline: ${data.deadline}` : "No hard deadline"}
 Available study time: ${data.minutesPerDay} minutes/day
 Preferred learning style: ${data.learningStyle ?? "mixed"}
+${data.timeSlotPreference ? `Target Schedule Slot: ${data.timeSlotPreference}` : ""}
+${data.syllabusText ? `CUSTOM SYLLABUS / MATERIAL PROVIDED BY USER:\n"""\n${data.syllabusText}\n"""\nCRITICAL INSTRUCTION: Strictly structure the modules and topics to reflect the chapters, topics, and key concepts in the user-provided syllabus above.` : ""}
 
 Design 4-6 progressive modules, each with 3-6 topics. For each topic give a 1-2 sentence description, estimated study minutes, 3-5 key concepts, and 2-4 recommended resource types (video, article, docs, practice). Be concrete and specific to the goal. Do not include external URLs.
 
@@ -243,7 +247,7 @@ Return ONLY valid json matching this TypeScript shape (no markdown, no commentar
     // Persist to DB as this user
     const { supabase, userId } = context;
 
-    // Deactivate existing active goals
+    // Set other goals to non-active so this newly created goal is primary, but preserve them in DB for multi-track switching
     await supabase.from("goals").update({ is_active: false }).eq("user_id", userId);
 
     const { data: goal, error: goalErr } = await supabase
@@ -257,6 +261,8 @@ Return ONLY valid json matching this TypeScript shape (no markdown, no commentar
         minutes_per_day: data.minutesPerDay,
         deadline: data.deadline ?? null,
         learning_style: data.learningStyle,
+        time_slot_preference: data.timeSlotPreference ?? "flexible",
+        syllabus_text: data.syllabusText ?? null,
         is_active: true,
       })
       .select("id")

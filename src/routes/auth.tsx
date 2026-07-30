@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate, redirect } from "@tanstack/react-ro
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Sparkles, Loader2, ArrowRight } from "lucide-react";
+import { GraduationCap, BookOpen, Loader2, ArrowRight } from "lucide-react";
 
 import { z } from "zod";
 
@@ -51,14 +51,14 @@ function AuthPage() {
       <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-6">
         <Link to="/" className="mt-6 flex items-center gap-2 self-start">
           <div className="grid h-8 w-8 place-items-center rounded-full bg-ink text-background">
-            <Sparkles className="h-4 w-4" />
+            <GraduationCap className="h-4 w-4" />
           </div>
           <span className="font-display text-xl text-ink">StudyVerse</span>
         </Link>
 
         <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center py-16 text-center">
           <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl border border-border bg-surface-strong shadow-sm mb-6">
-            <Sparkles className="h-8 w-8 text-brand" />
+            <BookOpen className="h-8 w-8 text-brand" />
           </div>
 
           <h1 className="font-display text-4xl text-ink">

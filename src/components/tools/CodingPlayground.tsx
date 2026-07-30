@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Play, Sparkles, Code2, Copy, Check } from "lucide-react";
+import { Play, Wand2, Code2, Copy, Check } from "lucide-react";
 
 export function CodingPlayground({
   initialCode = `// StudyVerse Coding Sandbox
