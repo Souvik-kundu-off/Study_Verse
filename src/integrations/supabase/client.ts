@@ -27,26 +27,19 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
 }
 
 
-function getEnvVar(name: string): string | undefined {
-  if (typeof import.meta !== 'undefined' && import.meta.env?.[name]) {
-    return import.meta.env[name];
-  }
-  if (typeof process !== 'undefined' && process.env?.[name]) {
-    return process.env[name];
-  }
-  return undefined;
-}
-
 function createSupabaseClient() {
-  const SUPABASE_URL = getEnvVar('VITE_SUPABASE_URL') || getEnvVar('SUPABASE_URL');
-  const SUPABASE_PUBLISHABLE_KEY = getEnvVar('VITE_SUPABASE_PUBLISHABLE_KEY') || getEnvVar('SUPABASE_PUBLISHABLE_KEY');
+  // Vite statically replaces import.meta.env.VITE_* at build time.
+  // Dynamic bracket access like import.meta.env?.['VITE_X'] does NOT get replaced.
+  // So we MUST use the literal property names here.
+  const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+  const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
   if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
     const missing = [
-      ...(!SUPABASE_URL ? ['SUPABASE_URL / VITE_SUPABASE_URL'] : []),
-      ...(!SUPABASE_PUBLISHABLE_KEY ? ['SUPABASE_PUBLISHABLE_KEY / VITE_SUPABASE_PUBLISHABLE_KEY'] : []),
+      ...(!SUPABASE_URL ? ['VITE_SUPABASE_URL'] : []),
+      ...(!SUPABASE_PUBLISHABLE_KEY ? ['VITE_SUPABASE_PUBLISHABLE_KEY'] : []),
     ];
-    const message = `Missing Supabase environment variable(s): ${missing.join(', ')}.`;
+    const message = `Missing Supabase environment variable(s): ${missing.join(', ')}. Add them to your .env file or deployment environment.`;
     console.error(`[Supabase] ${message}`);
     throw new Error(message);
   }
