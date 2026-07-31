@@ -18,7 +18,7 @@ function dayKey(d: Date) {
 /** Adds minutes / completed topics to today's activity rollup for the signed-in user. */
 export const logActivity = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => logInput.parse(input))
+  .validator((input: unknown) => logInput.parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const day = todayUTC();

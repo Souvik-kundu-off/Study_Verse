@@ -8,12 +8,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   X, Play, Pause, RotateCcw, FileText, BookOpen, Bot,
-  Send, Loader2, CheckCircle2, Video, PenLine, Layers, HelpCircle, Code2, Wand2, ExternalLink, RefreshCw, Maximize2, Minimize2, Save, Search, Download, Trash2
+  Send, Loader2, CheckCircle2, Video, PenLine, Layers, HelpCircle, Code2, Wand2, ExternalLink, RefreshCw, Maximize2, Minimize2, Save, Search, Download, Trash2, Upload
 } from "lucide-react";
 import { FlashcardDeck } from "@/components/study/FlashcardDeck";
 import { QuizModal } from "@/components/study/QuizModal";
 import { CodingPlayground } from "@/components/tools/CodingPlayground";
 import { FormattedText } from "@/components/ui/FormattedText";
+import { ingestDocument } from "@/lib/rag.server";
 
 export const Route = createFileRoute("/_authenticated/focus/$topicId")({
   head: () => ({
@@ -49,10 +50,14 @@ function FocusWorkspace() {
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
   const [generatingCards, setGeneratingCards] = useState(false);
   const [showVideo, setShowVideo] = useState(true);
+  const [docName, setDocName] = useState("");
+  const [docText, setDocText] = useState("");
+  const [ingesting, setIngesting] = useState(false);
 
   const genNotes = useServerFn(generateSmartNotes);
   const genQuiz = useServerFn(generateQuizForTopic);
   const genCards = useServerFn(generateFlashcardsForTopic);
+  const ingestFn = useServerFn(ingestDocument);
 
   // Auto trigger fullscreen focus mode on lesson start
   useEffect(() => {
@@ -570,9 +575,65 @@ function FocusWorkspace() {
           {/* Tab 5: Coding Sandbox */}
           {tab === "playground" && <CodingPlayground />}
 
-          {/* Tab 6: Clickable Interactive Resources */}
+          {/* Tab 6: Clickable Interactive Resources & Grounded Material Upload */}
           {tab === "resources" && (
-            <div className="min-h-0 flex-1 space-y-3 overflow-auto p-4">
+            <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
+              {/* Grounded Course Material Ingestion Box */}
+              <div className="rounded-2xl border-2 border-indigo-500/30 bg-gradient-to-br from-indigo-50/70 via-white to-purple-50/70 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/40 p-4 shadow-sm space-y-3">
+                <div className="flex items-center gap-2 border-b border-indigo-200/50 dark:border-slate-800 pb-2">
+                  <Upload className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-950 dark:text-indigo-200">
+                    Add Grounded Textbook / PDF Notes
+                  </h4>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                  Paste textbook excerpts, lecture slides, or documentation text below to generate 100% grounded flashcards & quizzes with page citations!
+                </p>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    placeholder="Document Name (e.g. Chapter 3 Notes.pdf)"
+                    value={docName}
+                    onChange={(e) => setDocName(e.target.value)}
+                    className="w-full rounded-xl border border-border bg-background px-3 py-1.5 text-xs text-ink placeholder:text-ink-subtle focus:outline-none"
+                  />
+                  <textarea
+                    rows={3}
+                    placeholder="Paste textbook or lecture text here..."
+                    value={docText}
+                    onChange={(e) => setDocText(e.target.value)}
+                    className="w-full resize-none rounded-xl border border-border bg-background p-3 text-xs text-ink placeholder:text-ink-subtle focus:outline-none"
+                  />
+                  <button
+                    disabled={ingesting || !docText.trim() || !docName.trim()}
+                    onClick={async () => {
+                      setIngesting(true);
+                      try {
+                        const res = await ingestFn({
+                          data: {
+                            topicId,
+                            goalId: topic?.goal_id ?? undefined,
+                            documentName: docName.trim(),
+                            rawText: docText.trim(),
+                          },
+                        });
+                        toast.success(`Ingested ${res.chunksIngested} chunks from "${docName}"! RAG vector index ready.`);
+                        setDocText("");
+                        setDocName("");
+                      } catch (err) {
+                        toast.error(err instanceof Error ? err.message : "Ingestion failed");
+                      } finally {
+                        setIngesting(false);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-indigo-700 disabled:opacity-50 shadow-sm"
+                  >
+                    {ingesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                    {ingesting ? "Indexing Chunks..." : "Ingest & Vector Index Material"}
+                  </button>
+                </div>
+              </div>
+
               {resources.length === 0 && (
                 <p className="text-sm text-ink-muted">No specific external resources listed for this topic.</p>
               )}

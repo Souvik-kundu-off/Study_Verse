@@ -1,4 +1,5 @@
 import React from "react";
+import { MermaidDiagram } from "./MermaidDiagram";
 
 interface FormattedTextProps {
   content: string;
@@ -16,6 +17,7 @@ export function FormattedText({ content, className = "" }: FormattedTextProps) {
   const lines = content.split("\n");
   const elements: React.ReactNode[] = [];
   let inCodeBlock = false;
+  let codeLang = "";
   let codeBuffer: string[] = [];
   let listBuffer: string[] = [];
 
@@ -37,12 +39,18 @@ export function FormattedText({ content, className = "" }: FormattedTextProps) {
 
   const flushCode = (keyPrefix: string) => {
     if (codeBuffer.length > 0) {
-      elements.push(
-        <div key={`${keyPrefix}-code`} className="my-4 overflow-x-auto rounded-xl bg-slate-900 border border-slate-800 p-4 text-xs font-mono text-emerald-400 shadow-sm">
-          <pre>{codeBuffer.join("\n")}</pre>
-        </div>
-      );
+      const codeText = codeBuffer.join("\n");
+      if (codeLang === "mermaid") {
+        elements.push(<MermaidDiagram key={`${keyPrefix}-mermaid`} chart={codeText} />);
+      } else {
+        elements.push(
+          <div key={`${keyPrefix}-code`} className="my-4 overflow-x-auto rounded-xl bg-slate-900 border border-slate-800 p-4 text-xs font-mono text-emerald-400 shadow-sm">
+            <pre>{codeText}</pre>
+          </div>
+        );
+      }
       codeBuffer = [];
+      codeLang = "";
     }
   };
 
@@ -57,6 +65,7 @@ export function FormattedText({ content, className = "" }: FormattedTextProps) {
       } else {
         flushList(`before-code-${index}`);
         inCodeBlock = true;
+        codeLang = trimmed.replace(/^```/, "").trim().toLowerCase();
       }
       return;
     }

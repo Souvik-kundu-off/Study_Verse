@@ -201,7 +201,7 @@ async function callAI(messages: Array<{ role: string; content: string }>): Promi
 
 export const generateRoadmap = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => roadmapInput.parse(input))
+  .validator((input: unknown) => roadmapInput.parse(input))
   .handler(async ({ data, context }) => {
     const prompt = `Design a focused learning roadmap for a ${data.level} learner.
 
@@ -314,7 +314,7 @@ const tutorInput = z.object({
 
 export const askTutor = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => tutorInput.parse(input))
+  .validator((input: unknown) => tutorInput.parse(input))
   .handler(async ({ data, context }) => {
     let topicContext = "";
     if (data.topicId) {
@@ -350,7 +350,7 @@ const quizInput = z.object({
 
 export const generateQuizForTopic = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => quizInput.parse(input))
+  .validator((input: unknown) => quizInput.parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
@@ -414,7 +414,7 @@ const flashcardsInput = z.object({
 
 export const generateFlashcardsForTopic = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => flashcardsInput.parse(input))
+  .validator((input: unknown) => flashcardsInput.parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
@@ -467,13 +467,15 @@ Return ONLY valid JSON array matching:
     return inserted ?? [];
   });
 
+import { getGroundedContext } from "./rag.server";
+
 const generateNotesInput = z.object({
   topicId: z.string().uuid(),
 });
 
 export const generateSmartNotes = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => generateNotesInput.parse(input))
+  .validator((input: unknown) => generateNotesInput.parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
@@ -485,30 +487,42 @@ export const generateSmartNotes = createServerFn({ method: "POST" })
 
     if (!topic) throw new Error("Topic not found");
 
+    // Fetch grounded document chunks if available
+    const groundedDocs = await getGroundedContext(supabase, userId, data.topicId, topic.title);
+    const contextBlock = groundedDocs ? `\n\n### Grounded Source Material:\n${groundedDocs}` : "";
+
     const prompt = `Write comprehensive, beautiful study notes in GitHub Markdown for topic: "${topic.title}".
-Context: ${topic.description ?? ""}
+Context: ${topic.description ?? ""}${contextBlock}
 Key concepts to cover: ${(topic.key_concepts as string[])?.join(", ") ?? ""}
 
 Include:
 - 📌 Overview & Core Definition
 - 🧠 Key Concepts & Formulas
+- 📊 Visual Concept Flowchart using strict standard Mermaid syntax inside a \`\`\`mermaid codeblock! Example format:
+\`\`\`mermaid
+graph TD
+    A[${topic.title}] --> B[Core Concept 1]
+    B --> C[Key Operation / Formula]
+    C --> D[Mastery]
+\`\`\`
 - 💡 Real-world Analogy or Code Example
-- 🎯 Exam / Interview Tip`;
+- 🎯 Exam / Interview Tip
+${groundedDocs ? "- 📚 Source Page Citations referenced from the material above" : ""}`;
 
     const content = await callAI([
-      { role: "system", content: "You are a master educator generating world-class study notes in clean Markdown." },
+      { role: "system", content: "You are a master educator generating world-class study notes with valid Mermaid.js graph TD diagrams." },
       { role: "user", content: prompt },
     ]);
 
     const { data: note, error } = await supabase
       .from("notes")
       .upsert(
-        { user_id: userId, topic_id: data.topicId, content },
+        { user_id: userId, topic_id: data.topicId, ai_summary: content },
         { onConflict: "user_id,topic_id" }
       )
-      .select("id, content")
+      .select("id, content, ai_summary")
       .single();
 
     if (error || !note) throw new Error(error?.message ?? "Failed to save notes");
-    return note;
+    return { id: note.id, content: note.ai_summary ?? note.content };
   });
