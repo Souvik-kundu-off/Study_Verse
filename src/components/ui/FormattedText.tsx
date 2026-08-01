@@ -1,5 +1,6 @@
 import React from "react";
 import { MermaidDiagram } from "./MermaidDiagram";
+import { UniversalAnimator } from "./UniversalAnimator";
 
 interface FormattedTextProps {
   content: string;
@@ -40,8 +41,10 @@ export function FormattedText({ content, className = "" }: FormattedTextProps) {
   const flushCode = (keyPrefix: string) => {
     if (codeBuffer.length > 0) {
       const codeText = codeBuffer.join("\n");
-      if (codeLang === "mermaid") {
+      if (codeLang.includes("mermaid")) {
         elements.push(<MermaidDiagram key={`${keyPrefix}-mermaid`} chart={codeText} />);
+      } else if (codeLang.includes("anim") || codeLang.includes("simulation")) {
+        elements.push(<UniversalAnimator key={`${keyPrefix}-anim`} data={codeText} />);
       } else {
         elements.push(
           <div key={`${keyPrefix}-code`} className="my-4 overflow-x-auto rounded-xl bg-slate-900 border border-slate-800 p-4 text-xs font-mono text-emerald-400 shadow-sm">

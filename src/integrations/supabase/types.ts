@@ -139,6 +139,78 @@ export type Database = {
           },
         ]
       }
+      courses: {
+        Row: {
+          id: string
+          instructor_id: string
+          title: string
+          degree_program: string | null
+          semester: string | null
+          category: string | null
+          description: string | null
+          level: string | null
+          thumbnail_url: string | null
+          status: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          instructor_id: string
+          title: string
+          degree_program?: string | null
+          semester?: string | null
+          category?: string | null
+          description?: string | null
+          level?: string | null
+          thumbnail_url?: string | null
+          status?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          instructor_id?: string
+          title?: string
+          degree_program?: string | null
+          semester?: string | null
+          category?: string | null
+          description?: string | null
+          level?: string | null
+          thumbnail_url?: string | null
+          status?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      course_enrollments: {
+        Row: {
+          id: string
+          user_id: string
+          course_id: string
+          progress_pct: number
+          enrolled_at: string
+          completed_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          course_id: string
+          progress_pct?: number
+          enrolled_at?: string
+          completed_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          course_id?: string
+          progress_pct?: number
+          enrolled_at?: string
+          completed_at?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -146,6 +218,7 @@ export type Database = {
           full_name: string | null
           id: string
           onboarding_complete: boolean
+          role: "student" | "instructor" | "admin" | null
           updated_at: string
         }
         Insert: {
@@ -154,6 +227,7 @@ export type Database = {
           full_name?: string | null
           id: string
           onboarding_complete?: boolean
+          role?: "student" | "instructor" | "admin" | null
           updated_at?: string
         }
         Update: {
@@ -162,12 +236,32 @@ export type Database = {
           full_name?: string | null
           id?: string
           onboarding_complete?: boolean
+          role?: "student" | "instructor" | "admin" | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      system_settings: {
+        Row: {
+          key: string
+          value: string
+          updated_at: string
+        }
+        Insert: {
+          key: string
+          value: string
+          updated_at?: string
+        }
+        Update: {
+          key?: string
+          value?: string
           updated_at?: string
         }
         Relationships: []
       }
       roadmap_modules: {
         Row: {
+          course_id: string | null
           created_at: string
           description: string | null
           estimated_minutes: number
@@ -179,6 +273,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          course_id?: string | null
           created_at?: string
           description?: string | null
           estimated_minutes?: number
@@ -190,6 +285,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          course_id?: string | null
           created_at?: string
           description?: string | null
           estimated_minutes?: number

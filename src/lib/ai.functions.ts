@@ -498,19 +498,52 @@ Key concepts to cover: ${(topic.key_concepts as string[])?.join(", ") ?? ""}
 Include:
 - 📌 Overview & Core Definition
 - 🧠 Key Concepts & Formulas
-- 📊 Visual Concept Flowchart using strict standard Mermaid syntax inside a \`\`\`mermaid codeblock! Example format:
-\`\`\`mermaid
-graph TD
-    A[${topic.title}] --> B[Core Concept 1]
-    B --> C[Key Operation / Formula]
-    C --> D[Mastery]
+- 📊 Visual Concept Flowchart using strict standard Mermaid syntax inside a \`\`\`mermaid codeblock!
+- 🎬 Granular Interactive Step-by-Step Simulation using a \`\`\`animation codeblock with a 5 to 8 step JSON script matching:
+\`\`\`animation
+{
+  "title": "${topic.title} Detailed Visual Simulation",
+  "subject": "cs",
+  "type": "process_steps",
+  "steps": [
+    {
+      "stepNumber": 1,
+      "title": "Initialization & State Setup",
+      "description": "Thoroughly explaining the initial variables, boundary conditions, and setup...",
+      "keyTakeaway": "Initial conditions define the starting state.",
+      "stateVars": { "State": "Init", "Value": 0 },
+      "activeStageId": "step1",
+      "stages": [
+        { "id": "step1", "label": "1. Setup" },
+        { "id": "step2", "label": "2. Process" },
+        { "id": "step3", "label": "3. Evaluate" },
+        { "id": "step4", "label": "4. Final" }
+      ]
+    },
+    {
+      "stepNumber": 2,
+      "title": "First Operation",
+      "description": "Detailed explanation of step 2...",
+      "keyTakeaway": "Key insight for step 2...",
+      "stateVars": { "State": "Active", "Value": 10 },
+      "activeStageId": "step2",
+      "stages": [
+        { "id": "step1", "label": "1. Setup" },
+        { "id": "step2", "label": "2. Process" },
+        { "id": "step3", "label": "3. Evaluate" },
+        { "id": "step4", "label": "4. Final" }
+      ]
+    }
+  ]
+}
 \`\`\`
+(Set "subject" to "cs", "math", "physics", "chem", or "bio" based on the topic. Provide at least 5 detailed steps!)
 - 💡 Real-world Analogy or Code Example
 - 🎯 Exam / Interview Tip
 ${groundedDocs ? "- 📚 Source Page Citations referenced from the material above" : ""}`;
 
     const content = await callAI([
-      { role: "system", content: "You are a master educator generating world-class study notes with valid Mermaid.js graph TD diagrams." },
+      { role: "system", content: "You are a master educator generating world-class study notes with valid Mermaid.js diagrams and interactive step-by-step animation scripts for CS, Math, Physics, Chemistry, and Biology." },
       { role: "user", content: prompt },
     ]);
 

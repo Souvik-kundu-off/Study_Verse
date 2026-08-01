@@ -4,22 +4,36 @@ import { z } from "zod";
 
 const API_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
-// Simple text chunker
-export function chunkText(text: string, chunkSize = 500, overlap = 100): string[] {
+/**
+ * Storage-Optimized Text Chunker:
+ * - Strips redundant whitespace, headers & footers
+ * - Caps max chunks per document to preserve vector storage quota
+ */
+export function chunkText(text: string, chunkSize = 600, overlap = 80, maxChunks = 100): string[] {
+  // Sanitize text to save storage space
+  const sanitized = text
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+
   const chunks: string[] = [];
   let start = 0;
-  while (start < text.length) {
-    const end = Math.min(start + chunkSize, text.length);
-    const chunk = text.slice(start, end).trim();
-    if (chunk.length > 20) {
+
+  while (start < sanitized.length && chunks.length < maxChunks) {
+    const end = Math.min(start + chunkSize, sanitized.length);
+    const chunk = sanitized.slice(start, end).trim();
+
+    if (chunk.length > 30) {
       chunks.push(chunk);
     }
     start += chunkSize - overlap;
   }
+
   return chunks;
 }
 
-// Simple fallback vector generator (1536 floats)
+// Compact Vector Embedding Generator
 function generateFallbackEmbedding(text: string): number[] {
   const vec = new Array(1536).fill(0);
   for (let i = 0; i < text.length; i++) {
@@ -27,15 +41,15 @@ function generateFallbackEmbedding(text: string): number[] {
     const idx = (code * (i + 1)) % 1536;
     vec[idx] = (vec[idx] + (code / 255)) / 2;
   }
-  // Normalize vector
   const norm = Math.sqrt(vec.reduce((sum, val) => sum + val * val, 0)) || 1;
   return vec.map((val) => val / norm);
 }
 
-// Ingestion Server Function
+// Storage-Optimized Ingestion Server Function with Deduplication
 const ingestDocInput = z.object({
   goalId: z.string().uuid().optional(),
   topicId: z.string().uuid().optional(),
+  courseId: z.string().uuid().optional(),
   documentName: z.string().min(1),
   rawText: z.string().min(10),
 });
@@ -47,14 +61,30 @@ export const ingestDocument = createServerFn({ method: "POST" })
     const userId = context.userId;
     const rawChunks = chunkText(data.rawText);
 
-    // Rough page estimation (~1500 chars per page)
-    const records = rawChunks.map((chunk, idx) => {
-      const approxPage = Math.floor((idx * 400) / 1500) + 1;
+    // Fetch existing chunk content hashes to deduplicate & save database storage
+    const { data: existingDocs } = await (context.supabase.from as any)("document_chunks")
+      .select("content")
+      .eq("user_id", userId)
+      .eq("document_name", data.documentName)
+      .limit(200);
+
+    const existingSet = new Set(existingDocs?.map((d: any) => d.content) ?? []);
+
+    // Filter out chunks that are already stored in the vector database
+    const uniqueChunks = rawChunks.filter((chunk) => !existingSet.has(chunk));
+
+    if (uniqueChunks.length === 0) {
+      return { success: true, chunksIngested: 0, deduplicated: true };
+    }
+
+    const records = uniqueChunks.map((chunk, idx) => {
+      const approxPage = Math.floor((idx * 450) / 1500) + 1;
       const embedding = generateFallbackEmbedding(chunk);
       return {
         user_id: userId,
         goal_id: data.goalId ?? null,
         topic_id: data.topicId ?? null,
+        course_id: data.courseId ?? null,
         document_name: data.documentName,
         page_number: approxPage,
         chunk_index: idx,
@@ -63,11 +93,11 @@ export const ingestDocument = createServerFn({ method: "POST" })
       };
     });
 
-    // Insert chunks into document_chunks
+    // Insert unique chunks into document_chunks
     const { error } = await context.supabase.from("document_chunks" as any).insert(records as any);
     if (error) throw new Error(`Failed to ingest document: ${error.message}`);
 
-    return { success: true, chunksIngested: records.length };
+    return { success: true, chunksIngested: records.length, deduplicated: false };
   });
 
 // Retrieve Relevant Document Context for AI Prompts

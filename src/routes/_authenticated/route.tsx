@@ -1,7 +1,7 @@
 import { createFileRoute, redirect, Outlet, Link, useRouter, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useState } from "react";
-import { GraduationCap, LogOut, LayoutDashboard, Target } from "lucide-react";
+import { GraduationCap, LogOut, LayoutDashboard, Target, BookOpen, ShieldCheck } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -27,7 +27,7 @@ function AuthedShell() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("full_name, onboarding_complete")
+        .select("full_name, onboarding_complete, role")
         .eq("id", user.id)
         .maybeSingle();
       if (error) throw error;
@@ -35,20 +35,30 @@ function AuthedShell() {
     },
   });
 
-  // Redirect to onboarding if not complete
+  // Redirect admins strictly to /admin and students to onboarding/dashboard
   const pathname = router.state.location.pathname;
   const pendingPathname = router.state.resolvedLocation?.pathname;
   useEffect(() => {
     if (!profile) return;
-    // Don't bounce back to onboarding if we're already navigating away from it
-    // (e.g. right after roadmap generation when the profile cache may be stale)
-    const navigatingAway = pendingPathname && pendingPathname !== "/onboarding" && pathname === "/onboarding";
-    if (!profile.onboarding_complete && pathname !== "/onboarding" && !navigatingAway) {
+    const isAdmin = profile.role === "admin";
+
+    // Admins belong exclusively on /admin and cannot access student study routes (/dashboard, /roadmap, /focus)
+    if (isAdmin && pathname !== "/admin") {
       setRouting(true);
-      navigate({ to: "/onboarding" }).finally(() => setRouting(false));
+      navigate({ to: "/admin", replace: true }).finally(() => setRouting(false));
+      return;
     }
-    if (profile.onboarding_complete && pathname === "/onboarding") {
-      navigate({ to: "/dashboard" });
+
+    // Students & Instructors onboarding flow
+    if (!isAdmin) {
+      const navigatingAway = pendingPathname && pendingPathname !== "/onboarding" && pathname === "/onboarding";
+      if (!profile.onboarding_complete && pathname !== "/onboarding" && !navigatingAway) {
+        setRouting(true);
+        navigate({ to: "/onboarding" }).finally(() => setRouting(false));
+      }
+      if (profile.onboarding_complete && pathname === "/onboarding") {
+        navigate({ to: "/dashboard" });
+      }
     }
   }, [profile, pathname, pendingPathname, navigate]);
 
@@ -65,23 +75,39 @@ function AuthedShell() {
 
   if (hideChrome) return <Outlet />;
 
+  const isAdmin = profile?.role === "admin";
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-background/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-          <Link to="/dashboard" className="flex items-center gap-2">
+          <Link to={isAdmin ? "/admin" : "/dashboard"} className="flex items-center gap-2">
             <div className="grid h-7 w-7 place-items-center rounded-full bg-ink text-background">
               <GraduationCap className="h-4 w-4" />
             </div>
             <span className="font-display text-lg text-ink">StudyVerse</span>
           </Link>
+
           <nav className="hidden items-center gap-1 md:flex">
-            <NavLink to="/dashboard" icon={LayoutDashboard} label="Today" />
-            <NavLink to="/roadmap" icon={Target} label="Roadmap" />
+            {isAdmin ? (
+              <NavLink to="/admin" icon={ShieldCheck} label="Admin Console" />
+            ) : (
+              <>
+                <NavLink to="/dashboard" icon={LayoutDashboard} label="Today" />
+                <NavLink to="/courses" icon={BookOpen} label="Courses Directory" />
+                <NavLink to="/roadmap" icon={Target} label="Roadmap" />
+              </>
+            )}
           </nav>
+
           <div className="flex items-center gap-3">
-            <span className="hidden text-sm text-ink-muted sm:block">
+            <span className="hidden text-sm text-ink-muted sm:block flex items-center gap-1.5">
               {profile?.full_name ?? user.email}
+              {isAdmin && (
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-300 dark:border-purple-800">
+                  Admin
+                </span>
+              )}
             </span>
             <button
               onClick={signOut}

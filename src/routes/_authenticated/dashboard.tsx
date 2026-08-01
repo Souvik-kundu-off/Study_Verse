@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
@@ -60,8 +60,28 @@ type Goal = {
 function Dashboard() {
   const { user } = Route.useRouteContext();
   const search = Route.useSearch();
+  const navigate = useNavigate();
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(search?.newGoal ?? null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+
+  // Check if user is Admin and redirect to /admin
+  const { data: profile } = useQuery({
+    queryKey: ["profileRoleCheck", user.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+      return data;
+    },
+  });
+
+  useEffect(() => {
+    if (profile?.role === "admin") {
+      navigate({ to: "/admin", replace: true });
+    }
+  }, [profile, navigate]);
 
   // 1. Fetch all goals of user (Multi-Subject parallel tracks)
   const { data: allGoals } = useQuery({

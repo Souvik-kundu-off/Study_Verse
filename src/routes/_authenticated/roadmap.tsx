@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useState, useEffect } from "react";
@@ -38,7 +38,27 @@ type Goal = {
 
 function RoadmapPage() {
   const { user } = Route.useRouteContext();
+  const navigate = useNavigate();
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
+
+  // Redirect Admins to /admin
+  const { data: profile } = useQuery({
+    queryKey: ["profileRoleCheckRoadmap", user.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+      return data;
+    },
+  });
+
+  useEffect(() => {
+    if (profile?.role === "admin") {
+      navigate({ to: "/admin", replace: true });
+    }
+  }, [profile, navigate]);
   const [createModalOpen, setCreateModalOpen] = useState(false);
 
   const { data: allGoals } = useQuery({
