@@ -127,7 +127,7 @@ function FocusWorkspace() {
     }
   }, [noteRow]);
 
-  // YouTube Video Search
+  // Smart Educational YouTube Video Query Generator
   const [ytVideo, setYtVideo] = useState<{ videoId: string; title: string } | null>(null);
   const [ytLoading, setYtLoading] = useState(false);
 
@@ -137,8 +137,26 @@ function FocusWorkspace() {
     if (!apiKey) return;
 
     setYtLoading(true);
-    const query = `${topic.title} tutorial explanation`;
-    fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=1&q=${encodeURIComponent(query)}&type=video&key=${apiKey}`)
+
+    // Build context-aware educational search query (combines Subject Track + Topic + Educational filters)
+    const goalTitle = (topic as any)?.goals?.title ?? "";
+    let cleanQuery = "";
+    if (goalTitle && !topic.title.toLowerCase().includes(goalTitle.toLowerCase())) {
+      cleanQuery = `${goalTitle} ${topic.title}`;
+    } else {
+      cleanQuery = topic.title;
+    }
+
+    // Replace ambiguous words (like "exercise" or "workout") with coding/academic terms
+    cleanQuery = cleanQuery
+      .replace(/\bworkout\b/gi, "problems solution")
+      .replace(/\bexercise\b/gi, "practice problems")
+      .replace(/\bexercises\b/gi, "practice problems");
+
+    const query = `${cleanQuery} lecture tutorial explanation`;
+
+    // Fetch using videoCategoryId=27 (Education Category) in YouTube API v3
+    fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=1&q=${encodeURIComponent(query)}&type=video&videoCategoryId=27&key=${apiKey}`)
       .then((r) => r.json())
       .then((data) => {
         const item = data.items?.[0];
@@ -148,7 +166,7 @@ function FocusWorkspace() {
       })
       .catch(() => {})
       .finally(() => setYtLoading(false));
-  }, [topic?.title]);
+  }, [topic?.title, (topic as any)?.goals?.title]);
 
   // Auto-generate AI Lesson Notes on initial load if none exist yet
   useEffect(() => {
@@ -638,7 +656,12 @@ function FocusWorkspace() {
                 <p className="text-sm text-ink-muted">No specific external resources listed for this topic.</p>
               )}
               {resources.map((r, i) => {
-                const searchQuery = encodeURIComponent(`${topic?.title ?? ""} ${r.title}`);
+                const goalTitle = (topic as any)?.goals?.title ?? "";
+                const cleanTitle = `${goalTitle} ${topic?.title ?? ""} ${r.title}`
+                  .replace(/\bworkout\b/gi, "problems solution")
+                  .replace(/\bexercise\b/gi, "practice problems")
+                  .replace(/\bexercises\b/gi, "practice problems");
+                const searchQuery = encodeURIComponent(`${cleanTitle} lecture tutorial`);
                 return (
                   <div key={i} className="rounded-xl border border-border bg-background p-3.5 shadow-sm space-y-2">
                     <div className="flex items-center justify-between">

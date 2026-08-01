@@ -17,6 +17,7 @@ import { Route as AuthenticatedCoursesRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedRoadmapRouteImport } from './routes/_authenticated/roadmap'
+import { Route as AuthenticatedTeacherRouteImport } from './routes/_authenticated/teacher'
 import { Route as AuthenticatedFocusTopicIdRouteImport } from './routes/_authenticated/focus.$topicId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -58,6 +59,11 @@ const AuthenticatedRoadmapRoute = AuthenticatedRoadmapRouteImport.update({
   path: '/roadmap',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedTeacherRoute = AuthenticatedTeacherRouteImport.update({
+  id: '/teacher',
+  path: '/teacher',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedFocusTopicIdRoute =
   AuthenticatedFocusTopicIdRouteImport.update({
     id: '/focus/$topicId',
@@ -73,6 +79,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/roadmap': typeof AuthenticatedRoadmapRoute
+  '/teacher': typeof AuthenticatedTeacherRoute
   '/focus/$topicId': typeof AuthenticatedFocusTopicIdRoute
 }
 export interface FileRoutesByTo {
@@ -83,6 +90,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/roadmap': typeof AuthenticatedRoadmapRoute
+  '/teacher': typeof AuthenticatedTeacherRoute
   '/focus/$topicId': typeof AuthenticatedFocusTopicIdRoute
 }
 export interface FileRoutesById {
@@ -95,6 +103,7 @@ export interface FileRoutesById {
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/roadmap': typeof AuthenticatedRoadmapRoute
+  '/_authenticated/teacher': typeof AuthenticatedTeacherRoute
   '/_authenticated/focus/$topicId': typeof AuthenticatedFocusTopicIdRoute
 }
 export interface FileRouteTypes {
@@ -107,6 +116,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/onboarding'
     | '/roadmap'
+    | '/teacher'
     | '/focus/$topicId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -117,6 +127,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/onboarding'
     | '/roadmap'
+    | '/teacher'
     | '/focus/$topicId'
   id:
     | '__root__'
@@ -128,6 +139,7 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard'
     | '/_authenticated/onboarding'
     | '/_authenticated/roadmap'
+    | '/_authenticated/teacher'
     | '/_authenticated/focus/$topicId'
   fileRoutesById: FileRoutesById
 }
@@ -195,6 +207,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRoadmapRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/teacher': {
+      id: '/_authenticated/teacher'
+      path: '/teacher'
+      fullPath: '/teacher'
+      preLoaderRoute: typeof AuthenticatedTeacherRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/focus/$topicId': {
       id: '/_authenticated/focus/$topicId'
       path: '/focus/$topicId'
@@ -211,6 +230,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedRoadmapRoute: typeof AuthenticatedRoadmapRoute
+  AuthenticatedTeacherRoute: typeof AuthenticatedTeacherRoute
   AuthenticatedFocusTopicIdRoute: typeof AuthenticatedFocusTopicIdRoute
 }
 
@@ -220,6 +240,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedRoadmapRoute: AuthenticatedRoadmapRoute,
+  AuthenticatedTeacherRoute: AuthenticatedTeacherRoute,
   AuthenticatedFocusTopicIdRoute: AuthenticatedFocusTopicIdRoute,
 }
 

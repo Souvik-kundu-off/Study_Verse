@@ -82,6 +82,17 @@ This document serves as the **official project ledger** tracking all implemented
   - **⚙️ AI Engine Control Panel**: Master switches for AI Model (`Groq / Llama 3.3 70B`, `Gemini 1.5 Pro`, `GPT-4o`) and sliders for `match_threshold` & `match_count`.
   - **🛠️ Maintenance & Reports**: Report Export Studio (CSV/JSON), Vector Storage Vacuum, and Emergency Announcement Broadcast.
 
+---
+
+### 👨‍🏫 Phase 2.9: Instructor / Teacher Workspace (Completed)
+- [x] **Instructor Server Engine (`instructor.functions.ts`)**:
+  - Class telemetry, student roster progress queries, course material handlers, and AI query insight logs.
+- [x] **Teacher Workspace (`/teacher`)**:
+  - **📊 Class Telemetry**: Class average quiz scores, total study hours, and Weak Concept Heatmap.
+  - **👥 Student Roster & Gradebook**: Searchable student table, progress bars, "At Risk" flags, and 1-Click CSV Export.
+  - **📚 Course Material Studio**: Drag-and-drop PDF textbook upload & RAG indexing.
+  - **💬 AI Tutor Query Insights**: Anonymized log of top student AI Tutor questions.
+
 ## ⏳ SECTION 2: UPCOMING MASTER PHASES
 
 ### 📊 Phase 3: Cognitive Telemetry & FSRS Spaced Repetition Engine (Next Master Phase)

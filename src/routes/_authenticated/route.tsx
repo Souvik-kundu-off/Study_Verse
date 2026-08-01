@@ -91,6 +91,11 @@ function AuthedShell() {
           <nav className="hidden items-center gap-1 md:flex">
             {isAdmin ? (
               <NavLink to="/admin" icon={ShieldCheck} label="Admin Console" />
+            ) : profile?.role === "instructor" ? (
+              <>
+                <NavLink to="/teacher" icon={GraduationCap} label="Teacher Workspace" />
+                <NavLink to="/courses" icon={BookOpen} label="Courses Directory" />
+              </>
             ) : (
               <>
                 <NavLink to="/dashboard" icon={LayoutDashboard} label="Today" />
@@ -103,11 +108,15 @@ function AuthedShell() {
           <div className="flex items-center gap-3">
             <span className="hidden text-sm text-ink-muted sm:block flex items-center gap-1.5">
               {profile?.full_name ?? user.email}
-              {isAdmin && (
+              {isAdmin ? (
                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-300 dark:border-purple-800">
                   Admin
                 </span>
-              )}
+              ) : profile?.role === "instructor" ? (
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800">
+                  Teacher
+                </span>
+              ) : null}
             </span>
             <button
               onClick={signOut}
