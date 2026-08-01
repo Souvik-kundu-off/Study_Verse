@@ -151,24 +151,20 @@ export const getAITutorInsights = createServerFn({ method: "GET" })
     const { supabase, userId } = context;
     await requireInstructorOrAdminRole(supabase, userId);
 
-    return [
-      {
-        question: "How does Dijkstra's algorithm handle negative edge weights?",
-        topic: "Shortest Path Graph Algorithms",
-        frequencyCount: 42,
-        courseName: "Data Structures & Algorithms",
-      },
-      {
-        question: "What is the physical significance of wave-function collapse in Quantum Mechanics?",
-        topic: "Schrödinger Equation",
-        frequencyCount: 28,
-        courseName: "Quantum Physics & Mechanics",
-      },
-      {
-        question: "How to resolve deadlocks in multi-threaded Operating Systems?",
-        topic: "Concurrency & Process Synchronization",
-        frequencyCount: 19,
-        courseName: "Operating Systems",
-      },
-    ];
+    // Fetch real AI tutor student query logs from database
+    const { data: logs } = await (supabase.from as any)("ai_tutor_logs")
+      .select("id, user_question, topic_id, created_at, roadmap_topics(title)")
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (!logs || logs.length === 0) {
+      return [];
+    }
+
+    return logs.map((l: any) => ({
+      question: l.user_question,
+      topic: l.roadmap_topics?.title ?? "General Subject Topic",
+      frequencyCount: 1,
+      courseName: "Active Course Material",
+    }));
   });

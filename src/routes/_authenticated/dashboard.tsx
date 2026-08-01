@@ -80,6 +80,8 @@ function Dashboard() {
   useEffect(() => {
     if (profile?.role === "admin") {
       navigate({ to: "/admin", replace: true });
+    } else if (profile?.role === "instructor") {
+      navigate({ to: "/teacher", replace: true });
     }
   }, [profile, navigate]);
 

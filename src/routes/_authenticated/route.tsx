@@ -35,22 +35,30 @@ function AuthedShell() {
     },
   });
 
-  // Redirect admins strictly to /admin and students to onboarding/dashboard
+  // Redirect admins to /admin, instructors to /teacher, and students to onboarding/dashboard
   const pathname = router.state.location.pathname;
   const pendingPathname = router.state.resolvedLocation?.pathname;
   useEffect(() => {
     if (!profile) return;
     const isAdmin = profile.role === "admin";
+    const isInstructor = profile.role === "instructor";
 
-    // Admins belong exclusively on /admin and cannot access student study routes (/dashboard, /roadmap, /focus)
+    // 1. Admins belong exclusively on /admin
     if (isAdmin && pathname !== "/admin") {
       setRouting(true);
       navigate({ to: "/admin", replace: true }).finally(() => setRouting(false));
       return;
     }
 
-    // Students & Instructors onboarding flow
-    if (!isAdmin) {
+    // 2. Instructors belong on /teacher or /courses (cannot access student study routes /dashboard, /roadmap, /focus)
+    if (isInstructor && pathname !== "/teacher" && pathname !== "/courses") {
+      setRouting(true);
+      navigate({ to: "/teacher", replace: true }).finally(() => setRouting(false));
+      return;
+    }
+
+    // 3. Students onboarding & dashboard flow
+    if (!isAdmin && !isInstructor) {
       const navigatingAway = pendingPathname && pendingPathname !== "/onboarding" && pathname === "/onboarding";
       if (!profile.onboarding_complete && pathname !== "/onboarding" && !navigatingAway) {
         setRouting(true);
@@ -76,12 +84,13 @@ function AuthedShell() {
   if (hideChrome) return <Outlet />;
 
   const isAdmin = profile?.role === "admin";
+  const isInstructor = profile?.role === "instructor";
 
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-background/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-          <Link to={isAdmin ? "/admin" : "/dashboard"} className="flex items-center gap-2">
+          <Link to={isAdmin ? "/admin" : isInstructor ? "/teacher" : "/dashboard"} className="flex items-center gap-2">
             <div className="grid h-7 w-7 place-items-center rounded-full bg-ink text-background">
               <GraduationCap className="h-4 w-4" />
             </div>

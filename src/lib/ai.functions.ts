@@ -341,6 +341,18 @@ ${topicContext}`,
       { role: "user", content: data.question },
     ]);
 
+    // Log AI Tutor interaction for instructor & admin telemetry
+    try {
+      await (context.supabase.from as any)("ai_tutor_logs").insert({
+        user_id: context.userId,
+        topic_id: data.topicId ?? null,
+        user_question: data.question,
+        ai_answer: answer.slice(0, 500),
+      });
+    } catch {
+      /* Logged gracefully */
+    }
+
     return { answer };
   });
 

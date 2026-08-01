@@ -57,6 +57,8 @@ function RoadmapPage() {
   useEffect(() => {
     if (profile?.role === "admin") {
       navigate({ to: "/admin", replace: true });
+    } else if (profile?.role === "instructor") {
+      navigate({ to: "/teacher", replace: true });
     }
   }, [profile, navigate]);
   const [createModalOpen, setCreateModalOpen] = useState(false);
