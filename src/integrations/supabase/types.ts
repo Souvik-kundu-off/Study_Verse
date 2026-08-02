@@ -220,6 +220,13 @@ export type Database = {
           onboarding_complete: boolean
           role: "student" | "instructor" | "admin" | null
           updated_at: string
+          institution_name: string | null
+          academic_title: string | null
+          specialization: string | null
+          teaching_experience_years: number | null
+          bio: string | null
+          portfolio_url: string | null
+          is_verified_instructor: boolean | null
         }
         Insert: {
           avatar_url?: string | null
@@ -229,6 +236,13 @@ export type Database = {
           onboarding_complete?: boolean
           role?: "student" | "instructor" | "admin" | null
           updated_at?: string
+          institution_name?: string | null
+          academic_title?: string | null
+          specialization?: string | null
+          teaching_experience_years?: number | null
+          bio?: string | null
+          portfolio_url?: string | null
+          is_verified_instructor?: boolean | null
         }
         Update: {
           avatar_url?: string | null
@@ -238,6 +252,13 @@ export type Database = {
           onboarding_complete?: boolean
           role?: "student" | "instructor" | "admin" | null
           updated_at?: string
+          institution_name?: string | null
+          academic_title?: string | null
+          specialization?: string | null
+          teaching_experience_years?: number | null
+          bio?: string | null
+          portfolio_url?: string | null
+          is_verified_instructor?: boolean | null
         }
         Relationships: []
       }

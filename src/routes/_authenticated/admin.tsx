@@ -5,12 +5,12 @@ import {
   getAdminTelemetry,
   getAdminUsers,
   getAdminCourses,
+  updateUserRole,
   toggleCourseStatus,
   getSystemSettings,
   updateSystemSettings,
   purgeOrphanedVectorChunks
 } from "@/lib/admin.functions";
-import { updateUserRole } from "@/lib/courses.functions";
 import { supabase } from "@/integrations/supabase/client";
 import {
   ShieldAlert,
@@ -101,8 +101,8 @@ function AdminConsolePage() {
 
   // Role Update Mutation
   const roleMutation = useMutation({
-    mutationFn: ({ role }: { role: "student" | "instructor" | "admin" }) =>
-      updateUserRole({ data: { role } }),
+    mutationFn: ({ targetUserId, role }: { targetUserId: string; role: "student" | "instructor" | "admin" }) =>
+      updateUserRole({ data: { targetUserId, role } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["adminUsers"] });
       queryClient.invalidateQueries({ queryKey: ["adminTelemetry"] });
@@ -405,7 +405,13 @@ function AdminConsolePage() {
                       <td className="p-4">
                         <select
                           value={u.role ?? "student"}
-                          onChange={(e) => roleMutation.mutate({ role: e.target.value as any })}
+                          onChange={(e) =>
+                            roleMutation.mutate({
+                              targetUserId: u.id,
+                              role: e.target.value as "student" | "instructor" | "admin",
+                            })
+                          }
+                          disabled={roleMutation.isPending}
                           className="rounded-lg border border-border bg-background px-2.5 py-1 text-xs text-ink focus:outline-none"
                         >
                           <option value="student">Student</option>

@@ -10,7 +10,47 @@ export const Route = createFileRoute("/_authenticated")({
     if (typeof window === "undefined") return { user: { id: "", email: "" } as any };
     const { data, error } = await supabase.auth.getUser();
     if (error || !data.user) throw redirect({ to: "/auth" });
-    return { user: data.user };
+
+    // Check if profile exists in database
+    const { data: profile, error: pErr } = await supabase
+      .from("profiles")
+      .select("id, onboarding_complete, role")
+      .eq("id", data.user.id)
+      .maybeSingle();
+
+    if (pErr || !profile) {
+      // Profile missing (deleted account re-signing in) — wipe orphaned data and start fresh
+      const uid = data.user.id;
+
+      // Purge all orphaned study data left behind from the old profile
+      await Promise.all([
+        supabase.from("roadmap_topics").delete().eq("user_id", uid),
+        supabase.from("roadmap_modules").delete().eq("user_id", uid),
+        supabase.from("notes").delete().eq("user_id", uid),
+        supabase.from("flashcards").delete().eq("user_id", uid),
+        supabase.from("daily_activity").delete().eq("user_id", uid),
+        supabase.from("course_enrollments").delete().eq("user_id", uid),
+      ]);
+      // Delete goals last (modules/topics reference goal_id)
+      await supabase.from("goals").delete().eq("user_id", uid);
+
+      // Create fresh profile
+      const displayName =
+        data.user.user_metadata?.full_name ??
+        data.user.email?.split("@")[0] ??
+        "Learner";
+
+      await supabase.from("profiles").upsert({
+        id: uid,
+        full_name: displayName,
+        role: "student",
+        onboarding_complete: false,
+      });
+
+      return { user: data.user, initialProfile: { id: uid, onboarding_complete: false, role: "student" } };
+    }
+
+    return { user: data.user, initialProfile: profile };
   },
   component: AuthedShell,
 });
@@ -39,6 +79,11 @@ function AuthedShell() {
   const pathname = router.state.location.pathname;
   const pendingPathname = router.state.resolvedLocation?.pathname;
   useEffect(() => {
+    // Profile null at runtime means it was just re-created by beforeLoad — send to onboarding
+    if (profile === null) {
+      navigate({ to: "/onboarding", replace: true });
+      return;
+    }
     if (!profile) return;
     const isAdmin = profile.role === "admin";
     const isInstructor = profile.role === "instructor";

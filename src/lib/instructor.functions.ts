@@ -132,7 +132,7 @@ export const getInstructorCourses = createServerFn({ method: "GET" })
 
     let query = supabase
       .from("courses")
-      .select("id, title, degree_program, semester, category, status, created_at")
+      .select("id, title, degree_program, semester, category, status, created_at, instructor_id")
       .order("created_at", { ascending: false });
 
     if (!isAdmin) {

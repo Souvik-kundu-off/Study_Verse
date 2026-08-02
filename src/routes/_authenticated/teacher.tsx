@@ -7,7 +7,7 @@ import {
   getInstructorCourses,
   getAITutorInsights
 } from "@/lib/instructor.functions";
-import { createCourse } from "@/lib/courses.functions";
+import { createCourse, updateCourse, updateInstructorProfile } from "@/lib/courses.functions";
 import { ingestDocument } from "@/lib/rag.server";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -28,7 +28,12 @@ import {
   Layers,
   Sparkles,
   X,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Edit,
+  Building2,
+  Award,
+  ShieldCheck,
+  UserCheck
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -48,11 +53,12 @@ export const Route = createFileRoute("/_authenticated/teacher")({
 function TeacherWorkspacePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"telemetry" | "students" | "courses" | "ai">("telemetry");
+  const [activeTab, setActiveTab] = useState<"telemetry" | "students" | "courses" | "ai" | "profile">("telemetry");
   const [studentSearch, setStudentSearch] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingCourse, setEditingCourse] = useState<any | null>(null);
 
-  // Form state for creating courses inside Teacher Workspace
+  // Form state for creating/editing courses
   const [title, setTitle] = useState("");
   const [degreeProgram, setDegreeProgram] = useState("Computer Science");
   const [semester, setSemester] = useState("Comprehensive");
@@ -61,7 +67,14 @@ function TeacherWorkspacePage() {
   const [syllabusText, setSyllabusText] = useState("");
   const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; type: string; text: string }>>([]);
 
-  // Check role
+  // Instructor verification state
+  const [instName, setInstName] = useState("");
+  const [academicTitle, setAcademicTitle] = useState("Assistant Professor");
+  const [specialization, setSpecialization] = useState("Computer Science");
+  const [experienceYears, setExperienceYears] = useState(3);
+  const [bio, setBio] = useState("");
+
+  // Check role & profile details
   const { data: profile, isLoading: isRoleLoading } = useQuery({
     queryKey: ["teacherRoleCheck"],
     queryFn: async () => {
@@ -69,9 +82,17 @@ function TeacherWorkspacePage() {
       if (!user) return null;
       const { data } = await supabase
         .from("profiles")
-        .select("id, full_name, role")
+        .select("id, full_name, role, institution_name, academic_title, specialization, teaching_experience_years, bio, is_verified_instructor")
         .eq("id", user.id)
         .maybeSingle();
+
+      if (data) {
+        setInstName((data as any).institution_name ?? "");
+        setAcademicTitle((data as any).academic_title ?? "Assistant Professor");
+        setSpecialization((data as any).specialization ?? "Computer Science");
+        setExperienceYears((data as any).teaching_experience_years ?? 3);
+        setBio((data as any).bio ?? "");
+      }
       return data;
     },
   });
@@ -108,6 +129,9 @@ function TeacherWorkspacePage() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
+      if (attachedFiles.length === 0) {
+        throw new Error("Mandatory: Please attach at least 1 course material file (PDF, notes, or slides) to publish this course!");
+      }
       const course = await createCourse({
         data: {
           title,
@@ -152,6 +176,66 @@ function TeacherWorkspacePage() {
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingCourse) return;
+      await updateCourse({
+        data: {
+          courseId: editingCourse.id,
+          title,
+          degreeProgram,
+          category,
+          description,
+        },
+      });
+
+      // Ingest any newly attached textbook files
+      for (const file of attachedFiles) {
+        if (file.text && file.text.length > 10) {
+          try {
+            await ingestDocument({
+              data: {
+                courseId: editingCourse.id,
+                documentName: file.name,
+                rawText: file.text,
+              },
+            });
+          } catch {
+            /* Handled gracefully */
+          }
+        }
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["instructorCourses"] });
+      setEditingCourse(null);
+      setTitle("");
+      setAttachedFiles([]);
+      toast.success("Course details & new materials updated successfully!");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message ?? "Course update failed");
+    },
+  });
+
+  const profileMutation = useMutation({
+    mutationFn: () =>
+      updateInstructorProfile({
+        data: {
+          institutionName: instName,
+          academicTitle,
+          specialization,
+          experienceYears,
+          bio,
+        },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["teacherRoleCheck"] });
+      toast.success("Instructor credentials & verification details updated!");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -178,6 +262,15 @@ function TeacherWorkspacePage() {
         reader.readAsText(file);
       }
     });
+  };
+
+  const openEditCourse = (course: any) => {
+    setEditingCourse(course);
+    setTitle(course.title);
+    setDegreeProgram(course.degree_program ?? "Computer Science");
+    setCategory(course.category ?? "Computer Science");
+    setDescription(course.description ?? "");
+    setAttachedFiles([]);
   };
 
   // Export Gradebook CSV Function
@@ -233,27 +326,43 @@ function TeacherWorkspacePage() {
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-8 md:py-12 space-y-8">
-      {/* Top Header */}
+      {/* Top Header & Instructor Credibility Badge */}
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-6">
-        <div className="space-y-1">
-          <p className="text-sm text-ink-muted flex items-center gap-1.5 font-medium">
-            <GraduationCap className="w-4 h-4 text-brand" /> Teacher Workspace & Course Command
-          </p>
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-ink-muted flex items-center gap-1">
+              <GraduationCap className="w-4 h-4 text-brand" /> Teacher Workspace & Command Center
+            </span>
+            {(profile as any)?.institution_name && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 px-2.5 py-0.5 text-[10px] font-bold text-indigo-700 dark:text-indigo-300">
+                <Building2 className="w-3 h-3" /> {(profile as any).institution_name}
+              </span>
+            )}
+          </div>
+
           <h1 className="font-display text-4xl text-ink md:text-5xl">
             Instructor Studio.
           </h1>
           <p className="text-sm text-ink-muted max-w-2xl mt-1 leading-relaxed">
-            Monitor class progress, upload authoritative PDF textbooks, inspect weak student concepts, and view AI Tutor student query insights.
+            Manage course materials, inspect weak student concepts, edit published courses, and verify instructor credentials.
           </p>
         </div>
 
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2.5 text-xs font-semibold text-background hover:bg-ink/90 transition shadow-sm shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Create & Index Course</span>
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => setActiveTab("profile")}
+            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-4 py-2.5 text-xs font-semibold text-ink hover:bg-surface-strong transition shadow-sm"
+          >
+            <UserCheck className="w-4 h-4 text-indigo-500" /> Educator Profile
+          </button>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2.5 text-xs font-semibold text-background hover:bg-ink/90 transition shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Create Course</span>
+          </button>
+        </div>
       </div>
 
       {/* Tab Navigation */}
@@ -263,6 +372,7 @@ function TeacherWorkspacePage() {
           { id: "students", label: "👥 Student Roster & Gradebook", icon: Users },
           { id: "courses", label: "📚 Taught Courses Studio", icon: BookOpen },
           { id: "ai", label: "💬 AI Tutor Student Query Insights", icon: Bot },
+          { id: "profile", label: "🛡️ Verification & Profile", icon: Award },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -437,28 +547,42 @@ function TeacherWorkspacePage() {
       {activeTab === "courses" && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {courses.map((course) => (
-              <div key={course.id} className="rounded-2xl border border-border bg-surface p-6 space-y-4 shadow-sm flex flex-col justify-between">
-                <div className="space-y-2">
-                  <span className="inline-flex items-center rounded-full bg-surface-strong px-2.5 py-0.5 text-[10px] font-semibold text-ink-muted">
-                    {course.category ?? "Computer Science"}
-                  </span>
-                  <h3 className="font-display text-xl text-ink leading-snug">{course.title}</h3>
-                  <p className="text-xs text-ink-subtle">{course.degree_program ?? "All Tracks"}</p>
+            {courses.map((course) => {
+              const isOwner = course.instructor_id === profile?.id || profile?.role === "admin";
+              return (
+                <div key={course.id} className="rounded-2xl border border-border bg-surface p-6 space-y-4 shadow-sm flex flex-col justify-between">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="inline-flex items-center rounded-full bg-surface-strong px-2.5 py-0.5 text-[10px] font-semibold text-ink-muted">
+                        {course.category ?? "Computer Science"}
+                      </span>
+                      {isOwner && (
+                        <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                          Course Owner
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="font-display text-xl text-ink leading-snug">{course.title}</h3>
+                    <p className="text-xs text-ink-subtle">{course.degree_program ?? "All Tracks"}</p>
+                  </div>
+                  <div className="pt-3 border-t border-border flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 capitalize">
+                      {course.status}
+                    </span>
+                    {isOwner ? (
+                      <button
+                        onClick={() => openEditCourse(course)}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-ink text-background px-3 py-1.5 text-xs font-semibold hover:bg-ink/90 transition shadow-sm"
+                      >
+                        <Edit className="w-3.5 h-3.5" /> Edit Course & Materials
+                      </button>
+                    ) : (
+                      <span className="text-[11px] text-ink-subtle italic">Read-only</span>
+                    )}
+                  </div>
                 </div>
-                <div className="pt-3 border-t border-border flex items-center justify-between">
-                  <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 capitalize">
-                    {course.status}
-                  </span>
-                  <button
-                    onClick={() => setShowCreateModal(true)}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand hover:underline"
-                  >
-                    <Upload className="w-3.5 h-3.5" /> Upload Materials
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -476,23 +600,261 @@ function TeacherWorkspacePage() {
           </div>
 
           <div className="space-y-3">
-            {aiInsights.map((insight, idx) => (
-              <div key={idx} className="p-4 rounded-xl border border-border bg-background space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-brand">{insight.topic}</span>
-                  <span className="font-mono text-ink-subtle">{insight.frequencyCount} Student Queries</span>
-                </div>
-                <p className="text-xs text-ink font-medium leading-relaxed">
-                  "{insight.question}"
-                </p>
-                <p className="text-[11px] text-ink-subtle">{insight.courseName}</p>
+            {aiInsights.length === 0 ? (
+              <div className="p-8 text-center text-ink-subtle text-xs space-y-2 border border-dashed border-border rounded-xl">
+                <HelpCircle className="w-8 h-8 mx-auto text-ink-subtle" />
+                <p>No student AI Tutor queries logged yet.</p>
+                <p className="text-[11px]">As students ask questions during study sessions, top query topics will appear here live!</p>
               </div>
-            ))}
+            ) : (
+              aiInsights.map((insight: any, idx: number) => (
+                <div key={idx} className="p-4 rounded-xl border border-border bg-background space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-brand">{insight.topic}</span>
+                    <span className="font-mono text-ink-subtle">{insight.frequencyCount} Student Query</span>
+                  </div>
+                  <p className="text-xs text-ink font-medium leading-relaxed">
+                    "{insight.question}"
+                  </p>
+                  <p className="text-[11px] text-ink-subtle">{insight.courseName}</p>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}
 
-      {/* Create Course & Upload Textbooks Modal */}
+      {/* TAB 5: INSTRUCTOR CREDIBILITY & PROFILE VERIFICATION */}
+      {activeTab === "profile" && (
+        <div className="rounded-2xl border border-border bg-surface p-6 md:p-8 space-y-6 shadow-sm max-w-2xl">
+          <div className="border-b border-border pb-3 flex items-center justify-between">
+            <div>
+              <h3 className="font-display text-xl text-ink flex items-center gap-2">
+                <Award className="w-5 h-5 text-brand" /> Instructor Verification & Credibility Profile
+              </h3>
+              <p className="text-xs text-ink-muted">
+                Your institution and title details are displayed to students on your course cards and overview drawers.
+              </p>
+            </div>
+            {(profile as any)?.is_verified_instructor && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 px-3 py-1 text-xs font-bold">
+                <ShieldCheck className="w-4 h-4" /> Verified Educator
+              </span>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-ink-muted mb-1">Institution / University Name *</label>
+              <input
+                type="text"
+                placeholder="e.g. Stanford University, MIT, Independent Educator..."
+                value={instName}
+                onChange={(e) => setInstName(e.target.value)}
+                className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-xs text-ink focus:outline-none focus:border-ink font-medium"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-ink-muted mb-1">Academic Title</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Associate Professor, Senior Lecturer..."
+                  value={academicTitle}
+                  onChange={(e) => setAcademicTitle(e.target.value)}
+                  className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-xs text-ink focus:outline-none focus:border-ink"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-ink-muted mb-1">Specialization / Subject Area</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Computer Science, Theoretical Physics..."
+                  value={specialization}
+                  onChange={(e) => setSpecialization(e.target.value)}
+                  className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-xs text-ink focus:outline-none focus:border-ink"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-ink-muted mb-1">Teaching Experience (Years)</label>
+              <input
+                type="number"
+                min="1"
+                max="50"
+                value={experienceYears}
+                onChange={(e) => setExperienceYears(parseInt(e.target.value, 10) || 1)}
+                className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-xs text-ink focus:outline-none focus:border-ink"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-ink-muted mb-1">Educator Bio & Credentials</label>
+              <textarea
+                placeholder="Short bio describing your teaching background and research..."
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+                rows={3}
+                className="w-full rounded-xl border border-border bg-background p-3 text-xs text-ink focus:outline-none focus:border-ink"
+              />
+            </div>
+          </div>
+
+          <button
+            onClick={() => profileMutation.mutate()}
+            disabled={profileMutation.isPending || !instName.trim()}
+            className="rounded-full bg-ink px-6 py-2.5 text-xs font-semibold text-background hover:bg-ink/90 transition shadow-sm disabled:opacity-40"
+          >
+            {profileMutation.isPending ? "Saving Profile..." : "Save Educator Credentials"}
+          </button>
+        </div>
+      )}
+
+      {/* Edit Course & Upload Textbooks Modal */}
+      {editingCourse && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="w-full max-w-xl rounded-2xl border border-border bg-surface p-6 md:p-8 shadow-xl space-y-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-border pb-4">
+              <div className="flex items-center gap-2.5">
+                <Edit className="w-5 h-5 text-brand" />
+                <h2 className="font-display text-xl text-ink">Edit Course & Upload Materials</h2>
+              </div>
+              <button
+                onClick={() => setEditingCourse(null)}
+                className="text-ink-muted hover:text-ink text-sm font-semibold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-ink-muted mb-1">Course Title *</label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-xs text-ink focus:outline-none focus:border-ink font-medium"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-ink-muted mb-1">Category</label>
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-xs text-ink focus:outline-none focus:border-ink"
+                  >
+                    <option value="Computer Science">Computer Science</option>
+                    <option value="Mathematics">Mathematics</option>
+                    <option value="Science & Physics">Science & Physics</option>
+                    <option value="Exams & Certifications">Exams & Certifications</option>
+                    <option value="General Mastery">General Mastery</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-ink-muted mb-1">Target Track Level</label>
+                  <input
+                    type="text"
+                    value={degreeProgram}
+                    onChange={(e) => setDegreeProgram(e.target.value)}
+                    className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-xs text-ink focus:outline-none focus:border-ink"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-ink-muted mb-1">Course Description</label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={2}
+                  className="w-full rounded-xl border border-border bg-background p-3 text-xs text-ink focus:outline-none focus:border-ink"
+                />
+              </div>
+
+              {/* Upload Additional Course Material & Cover Files Card */}
+              <div className="rounded-xl border border-dashed border-border bg-background p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-ink flex items-center gap-1.5">
+                    <Upload className="w-4 h-4 text-brand" /> Upload Additional Textbooks & Notes
+                  </span>
+                </div>
+
+                <label className="flex flex-col items-center justify-center p-4 border border-border rounded-xl bg-surface hover:bg-surface-strong cursor-pointer transition">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-ink-muted">
+                    <Upload className="w-4 h-4 text-indigo-500" />
+                    <span>Choose PDFs, Notes, Slides, or Cover Images</span>
+                  </div>
+                  <span className="text-[10px] text-ink-subtle mt-1">
+                    Supports .pdf, .txt, .md, .docx, .png, .jpg (Auto-indexed for RAG Grounding)
+                  </span>
+                  <input
+                    type="file"
+                    multiple
+                    accept=".pdf,.txt,.md,.docx,image/*"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </label>
+
+                {/* List of Attached Files */}
+                {attachedFiles.length > 0 && (
+                  <div className="space-y-2 pt-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-ink-subtle">
+                      Newly Attached Files ({attachedFiles.length}):
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {attachedFiles.map((f, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center gap-2 rounded-lg bg-surface border border-border px-3 py-1.5 text-xs text-ink"
+                        >
+                          {f.type === "image" ? (
+                            <ImageIcon className="w-3.5 h-3.5 text-purple-500" />
+                          ) : (
+                            <FileText className="w-3.5 h-3.5 text-indigo-500" />
+                          )}
+                          <span className="font-medium truncate max-w-[140px]">{f.name}</span>
+                          <button
+                            onClick={() => setAttachedFiles((prev) => prev.filter((_, i) => i !== idx))}
+                            className="text-ink-muted hover:text-rose-500 transition ml-1"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
+              <button
+                onClick={() => setEditingCourse(null)}
+                className="rounded-full border border-border px-4 py-2 text-xs font-semibold text-ink-muted hover:bg-surface-strong"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => updateMutation.mutate()}
+                disabled={!title.trim() || updateMutation.isPending}
+                className="rounded-full bg-ink px-5 py-2 text-xs font-semibold text-background hover:bg-ink/90 transition disabled:opacity-40 flex items-center gap-2"
+              >
+                {updateMutation.isPending ? "Updating Course & Materials..." : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Course Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="w-full max-w-xl rounded-2xl border border-border bg-surface p-6 md:p-8 shadow-xl space-y-6 max-h-[90vh] overflow-y-auto">

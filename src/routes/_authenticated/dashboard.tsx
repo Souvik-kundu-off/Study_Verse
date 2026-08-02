@@ -274,15 +274,20 @@ function Dashboard() {
             </>
           ) : activeGoal ? (
             <div>
-              <p className="text-xs uppercase tracking-widest text-ink-subtle">All done</p>
-              <h2 className="mt-3 font-display text-3xl text-ink">You've completed your roadmap.</h2>
-              <p className="mt-2 text-ink-muted">Time to set your next goal.</p>
-              <Link
-                to="/onboarding"
-                className="mt-6 inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-background"
+              <p className="text-xs uppercase tracking-widest text-brand font-semibold">Active Subject Track</p>
+              <h2 className="mt-2 font-display text-3xl text-ink">{activeGoal.title}</h2>
+              <p className="mt-2 text-ink-muted text-xs">
+                Your syllabus roadmap topics and AI lesson guides are ready for this subject.
+              </p>
+              <button
+                onClick={() => {
+                  const el = document.getElementById("roadmap-section");
+                  if (el) el.scrollIntoView({ behavior: "smooth" });
+                }}
+                className="mt-5 inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-xs font-semibold text-background hover:bg-ink/90 transition shadow-sm"
               >
-                Start a new goal <ArrowRight className="h-4 w-4" />
-              </Link>
+                View Syllabus Roadmap <ArrowRight className="h-3.5 w-3.5" />
+              </button>
             </div>
           ) : (
             <div className="animate-pulse">
@@ -329,7 +334,7 @@ function Dashboard() {
 
 
       {/* Roadmap */}
-      <section className="mt-14">
+      <section id="roadmap-section" className="mt-14">
         <div className="flex items-end justify-between">
           <div>
             <p className="text-xs uppercase tracking-widest text-ink-subtle">Active Subject Roadmap</p>

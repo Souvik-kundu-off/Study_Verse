@@ -95,6 +95,27 @@ export const getAdminCourses = createServerFn({ method: "GET" })
     return courses ?? [];
   });
 
+const updateUserRoleInput = z.object({
+  targetUserId: z.string().uuid(),
+  role: z.enum(["student", "instructor", "admin"]),
+});
+
+export const updateUserRole = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((input: unknown) => updateUserRoleInput.parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await requireAdminRole(supabase, userId);
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({ role: data.role })
+      .eq("id", data.targetUserId);
+
+    if (error) throw new Error(error.message);
+    return { success: true, targetUserId: data.targetUserId, role: data.role };
+  });
+
 const toggleCourseStatusInput = z.object({
   courseId: z.string().uuid(),
   status: z.enum(["draft", "published", "archived"]),

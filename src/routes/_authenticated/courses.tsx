@@ -18,7 +18,14 @@ import {
   FileText,
   Image as ImageIcon,
   X,
-  File
+  File,
+  Info,
+  Building2,
+  Award,
+  BookCheck,
+  Check,
+  HelpCircle,
+  Clock
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -41,6 +48,7 @@ function CoursesCatalogPage() {
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedCourseOverview, setSelectedCourseOverview] = useState<any | null>(null);
 
   // Form state for creating courses
   const [title, setTitle] = useState("");
@@ -48,6 +56,8 @@ function CoursesCatalogPage() {
   const [semester, setSemester] = useState("Comprehensive");
   const [category, setCategory] = useState("Computer Science");
   const [description, setDescription] = useState("");
+  const [prerequisites, setPrerequisites] = useState("None — Open to all learners");
+  const [estimatedDuration, setEstimatedDuration] = useState("4 Weeks (Self-paced)");
   const [syllabusText, setSyllabusText] = useState("");
   const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; type: string; text: string }>>([]);
 
@@ -76,9 +86,15 @@ function CoursesCatalogPage() {
 
   const enrollMutation = useMutation({
     mutationFn: (courseId: string) => enrollInCourse({ data: { courseId } }),
-    onSuccess: () => {
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["coursesCatalog"] });
-      toast.success("Successfully enrolled in course!");
+      queryClient.invalidateQueries({ queryKey: ["all-goals"] });
+      toast.success("Enrolled in course! Opening your study track...");
+      if (res?.goalId) {
+        navigate({ to: "/dashboard", search: { newGoal: res.goalId } });
+      } else {
+        navigate({ to: "/dashboard" });
+      }
     },
     onError: (err: Error) => {
       toast.error(err.message ?? "Enrollment failed");
@@ -87,13 +103,17 @@ function CoursesCatalogPage() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
+      if (attachedFiles.length === 0) {
+        throw new Error("Mandatory: Please attach at least 1 course material file (PDF, notes, or slides) to publish this course!");
+      }
+      const fullDesc = `${description}\n\n**Prerequisites:** ${prerequisites}\n**Estimated Duration:** ${estimatedDuration}`;
       const course = await createCourse({
         data: {
           title,
           degreeProgram,
           semester,
           category,
-          description,
+          description: fullDesc,
           syllabusText,
         },
       });
@@ -121,6 +141,7 @@ function CoursesCatalogPage() {
       queryClient.invalidateQueries({ queryKey: ["coursesCatalog"] });
       setShowCreateModal(false);
       setTitle("");
+      setDescription("");
       setSyllabusText("");
       setAttachedFiles([]);
       toast.success("Course and textbook documents published!");
@@ -183,7 +204,7 @@ function CoursesCatalogPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-8 md:py-12 space-y-8">
-      {/* Top Page Header (Consistent with Dashboard) */}
+      {/* Top Page Header */}
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-6">
         <div className="space-y-1">
           <p className="text-sm text-ink-muted flex items-center gap-1.5 font-medium">
@@ -280,7 +301,7 @@ function CoursesCatalogPage() {
                     {course.category ?? "Computer Science"}
                   </span>
                   <span className="text-[10px] font-medium text-ink-subtle">
-                    {course.level ?? "Intermediate"}
+                    {course.degree_program ?? "All Tracks"}
                   </span>
                 </div>
 
@@ -289,48 +310,152 @@ function CoursesCatalogPage() {
                   {course.title}
                 </h3>
 
-                {/* Course Description */}
+                {/* Instructor Credit Line */}
+                <p className="text-[11px] text-ink-subtle flex items-center gap-1">
+                  <GraduationCap className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>{course.instructorName}</span>
+                </p>
+
+                {/* Course Description Preview */}
                 <p className="text-xs text-ink-muted line-clamp-2 leading-relaxed">
                   {course.description}
                 </p>
               </div>
 
-              {/* Course Features Footer */}
-              <div className="space-y-4 pt-3 border-t border-border">
-                <div className="flex items-center gap-4 text-[11px] text-ink-subtle">
+              {/* Course Card Action Button: ONLY "Know More" button for EVERYONE */}
+              <div className="space-y-3 pt-3 border-t border-border">
+                <div className="flex items-center justify-between text-[11px] text-ink-subtle">
                   <span className="flex items-center gap-1">
                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> Verified Materials
                   </span>
                   <span className="flex items-center gap-1">
-                    <Bot className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" /> AI Personalization
+                    <Bot className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" /> AI Grounded
                   </span>
                 </div>
 
-                {/* Enrollment Action Button */}
-                {course.isEnrolled ? (
-                  <button
-                    onClick={() => navigate({ to: "/dashboard" })}
-                    className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-semibold py-2.5 text-xs transition hover:bg-emerald-100"
-                  >
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Enrolled — Continue Learning
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => enrollMutation.mutate(course.id)}
-                    disabled={enrollMutation.isPending}
-                    className="w-full flex items-center justify-center gap-2 rounded-xl bg-ink text-background font-semibold py-2.5 text-xs transition hover:bg-ink/90 shadow-sm"
-                  >
-                    <span>Enroll in Course</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                )}
+                {/* ONLY "Know More" button on Card */}
+                <button
+                  onClick={() => setSelectedCourseOverview(course)}
+                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-border bg-background hover:bg-surface-strong text-ink font-semibold py-2.5 text-xs transition shadow-sm"
+                >
+                  <Info className="w-3.5 h-3.5 text-brand" /> Know More & View Syllabus
+                </button>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Create Course Modal */}
+      {/* Course Overview Drawer / Modal */}
+      {selectedCourseOverview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="w-full max-w-xl rounded-2xl border border-border bg-surface p-6 md:p-8 shadow-xl space-y-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-border pb-4">
+              <div className="space-y-1">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-brand">
+                  {selectedCourseOverview.category ?? "Computer Science"}
+                </span>
+                <h2 className="font-display text-2xl text-ink">{selectedCourseOverview.title}</h2>
+              </div>
+              <button
+                onClick={() => setSelectedCourseOverview(null)}
+                className="text-ink-muted hover:text-ink text-sm font-semibold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-5">
+              {/* Instructor Credibility Card */}
+              <div className="rounded-xl border border-border bg-background p-4 space-y-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-ink-subtle flex items-center gap-1">
+                  <Award className="w-3.5 h-3.5 text-brand" /> Lead Educator & Author
+                </span>
+                <div className="flex items-start gap-3 pt-1">
+                  <div className="w-10 h-10 rounded-full bg-surface-strong border border-border flex items-center justify-center text-ink font-bold font-display text-lg shrink-0">
+                    {selectedCourseOverview.instructorName.charAt(0)}
+                  </div>
+                  <div className="space-y-0.5">
+                    <h4 className="font-display text-base text-ink flex items-center gap-1.5">
+                      {selectedCourseOverview.instructorName}
+                      <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                    </h4>
+                    <p className="text-xs text-ink-muted flex items-center gap-1">
+                      <Building2 className="w-3.5 h-3.5 text-ink-subtle" />
+                      {selectedCourseOverview.institutionName} • {selectedCourseOverview.academicTitle}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Course Overview Details */}
+              <div className="space-y-2">
+                <h4 className="text-xs font-semibold text-ink uppercase tracking-wider">About This Course</h4>
+                <p className="text-xs text-ink-muted leading-relaxed whitespace-pre-line">
+                  {selectedCourseOverview.description}
+                </p>
+              </div>
+
+              {/* Course Badges & Highlights */}
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <div className="p-3 rounded-xl border border-border bg-background space-y-1">
+                  <span className="text-[11px] font-semibold text-ink flex items-center gap-1">
+                    <BookCheck className="w-3.5 h-3.5 text-emerald-500" /> Verified Materials
+                  </span>
+                  <p className="text-[10px] text-ink-subtle">Trained on official textbooks & lecture PDFs.</p>
+                </div>
+
+                <div className="p-3 rounded-xl border border-border bg-background space-y-1">
+                  <span className="text-[11px] font-semibold text-ink flex items-center gap-1">
+                    <Bot className="w-3.5 h-3.5 text-indigo-500" /> Grounded AI Tutor
+                  </span>
+                  <p className="text-[10px] text-ink-subtle">Answers derived directly from official slides.</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Action: Enroll Button ONLY inside details modal for Students */}
+            <div className="flex items-center justify-between pt-4 border-t border-border">
+              <button
+                onClick={() => setSelectedCourseOverview(null)}
+                className="rounded-full border border-border px-4 py-2 text-xs font-semibold text-ink-muted hover:bg-surface-strong"
+              >
+                Close
+              </button>
+
+              {/* Enroll Button appears ONLY inside the details modal, and ONLY for Students */}
+              {!isInstructorOrAdmin && (
+                selectedCourseOverview.isEnrolled ? (
+                  <button
+                    onClick={() => {
+                      enrollMutation.mutate(selectedCourseOverview.id);
+                      setSelectedCourseOverview(null);
+                    }}
+                    disabled={enrollMutation.isPending}
+                    className="rounded-full bg-emerald-600 px-5 py-2 text-xs font-semibold text-white hover:bg-emerald-500 transition shadow-sm flex items-center gap-1.5"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Enrolled — Continue Learning
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      enrollMutation.mutate(selectedCourseOverview.id);
+                      setSelectedCourseOverview(null);
+                    }}
+                    disabled={enrollMutation.isPending}
+                    className="rounded-full bg-ink px-5 py-2 text-xs font-semibold text-background hover:bg-ink/90 transition shadow-sm flex items-center gap-1.5"
+                  >
+                    <span>Enroll in Course</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                )
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Course Modal (Rich Details Form) */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="w-full max-w-xl rounded-2xl border border-border bg-surface p-6 md:p-8 shadow-xl space-y-6 max-h-[90vh] overflow-y-auto">
@@ -355,7 +480,7 @@ function CoursesCatalogPage() {
                   placeholder="e.g. Data Structures & Algorithms, Quantum Physics, SAT Prep..."
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-xs text-ink focus:outline-none focus:border-ink"
+                  className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-xs text-ink focus:outline-none focus:border-ink font-medium"
                 />
               </div>
 
@@ -388,14 +513,38 @@ function CoursesCatalogPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-ink-muted mb-1">Course Description</label>
+                <label className="block text-xs font-semibold text-ink-muted mb-1">Course Description & Overview</label>
                 <textarea
-                  placeholder="Overview of what students will learn..."
+                  placeholder="Overview of what students will learn in this course..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={2}
                   className="w-full rounded-xl border border-border bg-background p-3 text-xs text-ink focus:outline-none focus:border-ink"
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-ink-muted mb-1">Prerequisites</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Basic C++, High School Math..."
+                    value={prerequisites}
+                    onChange={(e) => setPrerequisites(e.target.value)}
+                    className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-xs text-ink focus:outline-none focus:border-ink"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-ink-muted mb-1">Estimated Duration</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 4 Weeks (Self-paced), 12 Hours..."
+                    value={estimatedDuration}
+                    onChange={(e) => setEstimatedDuration(e.target.value)}
+                    className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-xs text-ink focus:outline-none focus:border-ink"
+                  />
+                </div>
               </div>
 
               {/* Upload Course Material & Cover Files Card */}
