@@ -33,8 +33,9 @@ export function QuizModal({
 
   if (loading) {
     return (
-      <div className="flex h-64 flex-col items-center justify-center p-6 text-center text-sm text-ink-muted">
-        <BrainCircuit className="h-6 w-6 animate-spin text-brand mb-2" /> Generating adaptive quiz questions…
+      <div className="flex h-64 flex-col items-center justify-center p-6 text-center text-sm text-slate-600">
+        <BrainCircuit className="h-6 w-6 animate-spin text-blue-600 mb-2" />
+        <p className="font-bold text-slate-900">Generating adaptive quiz questions…</p>
       </div>
     );
   }
@@ -42,11 +43,11 @@ export function QuizModal({
   if (!quiz || !quiz.questions || quiz.questions.length === 0) {
     return (
       <div className="flex h-64 flex-col items-center justify-center p-6 text-center">
-        <p className="text-sm text-ink-muted">No quiz available for this topic yet.</p>
+        <p className="text-sm font-semibold text-slate-700">No quiz available for this topic yet.</p>
         {onGenerate && (
           <button
             onClick={onGenerate}
-            className="mt-4 inline-flex items-center gap-2 rounded-full bg-brand px-4 py-2 text-xs font-medium text-brand-foreground transition hover:opacity-90"
+            className="mt-4 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-700 shadow-xs"
           >
             <HelpCircle className="h-3.5 w-3.5" /> Generate Practice Quiz
           </button>
@@ -91,21 +92,21 @@ export function QuizModal({
     const finalPct = Math.round((score / questions.length) * 100);
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-6 text-center">
-        <div className="grid h-12 w-12 place-items-center rounded-full bg-brand/10 text-brand">
+        <div className="grid h-12 w-12 place-items-center rounded-full bg-blue-100 text-blue-700">
           <Trophy className="h-6 w-6" />
         </div>
-        <h3 className="mt-3 font-display text-2xl text-ink">Quiz Completed!</h3>
-        <p className="mt-1 text-sm text-ink-muted">
-          You scored <span className="font-bold text-ink">{score}</span> out of {questions.length} ({finalPct}%)
+        <h3 className="mt-3 font-display text-2xl font-extrabold text-slate-900">Quiz Completed!</h3>
+        <p className="mt-1 text-sm font-semibold text-slate-700">
+          You scored <strong className="text-slate-950">{score}</strong> out of {questions.length} ({finalPct}%)
         </p>
         {finalPct >= 75 ? (
-          <p className="mt-2 text-xs text-brand font-medium">🎉 Great mastery! XP updated.</p>
+          <p className="mt-2 text-xs text-blue-700 font-bold">🎉 Great mastery! XP updated.</p>
         ) : (
-          <p className="mt-2 text-xs text-ink-subtle">Review the notes and try again to improve your score.</p>
+          <p className="mt-2 text-xs text-slate-600 font-medium">Review the notes and try again to improve your score.</p>
         )}
         <button
           onClick={handleReset}
-          className="mt-6 inline-flex items-center gap-2 rounded-full border border-border px-4 py-2 text-xs font-medium text-ink transition hover:bg-surface-strong"
+          className="mt-6 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-800 transition hover:bg-slate-50 shadow-xs"
         >
           <RotateCcw className="h-3.5 w-3.5" /> Retake Quiz
         </button>
@@ -115,25 +116,25 @@ export function QuizModal({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col p-4">
-      <div className="flex items-center justify-between text-xs text-ink-subtle pb-3">
-        <span className="uppercase tracking-widest font-mono">
+      <div className="flex items-center justify-between text-xs font-bold text-slate-600 pb-3">
+        <span className="uppercase tracking-wider font-mono">
           Question {currentIdx + 1}/{questions.length}
         </span>
         <span>Score: {score}</span>
       </div>
 
-      <h3 className="font-display text-base text-ink mb-4">{current.question}</h3>
+      <h3 className="font-display text-base font-extrabold text-slate-900 mb-4">{current.question}</h3>
 
-      <div className="space-y-2 flex-1">
+      <div className="space-y-2.5 flex-1">
         {current.options.map((opt, i) => {
-          let btnStyle = "border-border bg-background hover:border-ink/50 text-ink";
+          let btnStyle = "border-slate-200 bg-white hover:border-blue-500 text-slate-900 font-bold";
           if (answered) {
             if (i === current.correctIndex) {
-              btnStyle = "border-emerald-500/50 bg-emerald-500/10 text-emerald-900 font-medium";
+              btnStyle = "border-emerald-500 bg-emerald-50 text-emerald-950 font-bold";
             } else if (i === selectedOpt) {
-              btnStyle = "border-rose-500/50 bg-rose-500/10 text-rose-900";
+              btnStyle = "border-rose-400 bg-rose-50 text-rose-950 font-bold";
             } else {
-              btnStyle = "border-border/50 bg-background/50 text-ink-subtle opacity-60";
+              btnStyle = "border-slate-200 bg-slate-50 text-slate-500 opacity-60";
             }
           }
 
@@ -142,7 +143,7 @@ export function QuizModal({
               key={i}
               onClick={() => handleSelect(i)}
               disabled={answered}
-              className={`w-full text-left rounded-xl border p-3 text-sm transition flex items-center justify-between ${btnStyle}`}
+              className={`w-full text-left rounded-xl border p-3.5 text-sm transition flex items-center justify-between cursor-pointer ${btnStyle}`}
             >
               <span>{opt}</span>
               {answered && i === current.correctIndex && <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />}
@@ -155,16 +156,16 @@ export function QuizModal({
       </div>
 
       {answered && (
-        <div className="mt-4 rounded-xl border border-border bg-surface p-3 text-xs text-ink-muted">
-          <p className="font-medium text-ink mb-1">Explanation:</p>
-          <p>{current.explanation}</p>
+        <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/70 p-3.5 text-xs text-slate-800 font-medium">
+          <p className="font-extrabold text-blue-950 mb-1">Explanation:</p>
+          <p className="text-slate-800 leading-relaxed">{current.explanation}</p>
         </div>
       )}
 
       {answered && (
         <button
           onClick={handleNext}
-          className="mt-4 inline-flex items-center justify-center gap-2 rounded-full bg-ink px-4 py-2 text-xs font-medium text-background transition hover:opacity-90"
+          className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-blue-700 shadow-xs cursor-pointer"
         >
           {currentIdx < questions.length - 1 ? "Next Question" : "See Final Score"} <ArrowRight className="h-3.5 w-3.5" />
         </button>

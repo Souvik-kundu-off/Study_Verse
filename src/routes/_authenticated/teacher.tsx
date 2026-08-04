@@ -360,8 +360,29 @@ function TeacherWorkspacePage() {
       s.courseTitle.toLowerCase().includes(studentSearch.toLowerCase())
   );
 
+  const isVerified = (profile as any)?.is_verified_instructor || profile?.role === "admin";
+
   return (
     <main className="mx-auto max-w-6xl px-6 py-8 md:py-12 space-y-8">
+      {/* Verification Notice Banner */}
+      {!isVerified && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-xs font-semibold text-amber-900 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-2.5">
+            <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0" />
+            <div>
+              <p className="font-extrabold text-amber-950 text-sm">Verification Required / Account Restricted</p>
+              <p className="text-amber-800 font-medium">Your educator credentials are currently under review by platform administrators. You cannot create or publish official courses until approved.</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setActiveTab("profile")}
+            className="px-3.5 py-1.5 rounded-xl bg-amber-600 text-white font-bold hover:bg-amber-700 transition shrink-0 cursor-pointer shadow-2xs"
+          >
+            Update Credentials & Profile
+          </button>
+        </div>
+      )}
+
       {/* Top Header & Instructor Credibility Badge */}
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-6">
         <div className="space-y-2">
@@ -372,6 +393,11 @@ function TeacherWorkspacePage() {
             {(profile as any)?.institution_name && (
               <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 px-2.5 py-0.5 text-[10px] font-bold text-indigo-700 dark:text-indigo-300">
                 <Building2 className="w-3 h-3" /> {(profile as any).institution_name}
+              </span>
+            )}
+            {isVerified && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 border border-emerald-300 px-2.5 py-0.5 text-[10px] font-extrabold text-emerald-800">
+                Verified Educator 🛡️
               </span>
             )}
           </div>
@@ -387,13 +413,25 @@ function TeacherWorkspacePage() {
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => setActiveTab("profile")}
-            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-4 py-2.5 text-xs font-semibold text-ink hover:bg-surface-strong transition shadow-sm"
+            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-4 py-2.5 text-xs font-semibold text-ink hover:bg-surface-strong transition shadow-sm cursor-pointer"
           >
             <UserCheck className="w-4 h-4 text-indigo-500" /> Educator Profile
           </button>
           <button
-            onClick={() => setShowCreateModal(true)}
-            className="inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2.5 text-xs font-semibold text-background hover:bg-ink/90 transition shadow-sm"
+            onClick={() => {
+              if (!isVerified) {
+                toast.error("Verification Required: Your educator account is pending admin approval. You cannot create courses yet.");
+                setActiveTab("profile");
+                return;
+              }
+              setShowCreateModal(true);
+            }}
+            disabled={!isVerified}
+            className={`inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-xs font-semibold shadow-sm transition ${
+              !isVerified
+                ? "bg-slate-200 text-slate-500 cursor-not-allowed opacity-70"
+                : "bg-ink text-background hover:bg-ink/90 cursor-pointer"
+            }`}
           >
             <Plus className="w-4 h-4" />
             <span>Create Course</span>

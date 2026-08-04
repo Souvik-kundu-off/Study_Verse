@@ -21,56 +21,58 @@ function Landing() {
   return (
     <div className="min-h-screen bg-background text-ink">
       {/* Nav */}
-      <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
-        <Link to="/" className="flex items-center gap-2">
-          <div className="grid h-8 w-8 place-items-center rounded-full bg-ink text-background">
-            <GraduationCap className="h-4 w-4" />
-          </div>
-          <span className="font-display text-xl">StudyVerse</span>
-        </Link>
-        <nav className="hidden items-center gap-8 text-sm text-ink-muted md:flex">
-          <a href="#features" className="transition hover:text-ink">Features</a>
-          <a href="#focus" className="transition hover:text-ink">Focus Mode</a>
-          <a href="#how" className="transition hover:text-ink">How it works</a>
-        </nav>
-        <div className="flex items-center gap-2">
-          {signedIn ? (
-            <Link
-              to="/dashboard"
-              className="inline-flex items-center gap-1 rounded-full bg-ink px-4 py-2 text-sm font-medium text-background transition hover:opacity-90"
-            >
-              Dashboard <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          ) : (
-            <>
-              <Link to="/auth" className="text-sm text-ink-muted transition hover:text-ink">
-                Sign in
-              </Link>
+      <header className="sticky top-3 z-50 px-4 sm:px-6">
+        <div className="mx-auto flex max-w-6xl items-center justify-between liquid-glass rounded-2xl px-5 py-3 transition-all duration-300">
+          <Link to="/" className="flex items-center gap-2.5 group">
+            <div className="grid h-8.5 w-8.5 place-items-center rounded-xl bg-blue-600 text-white shadow-xs transition group-hover:scale-105">
+              <GraduationCap className="h-5 w-5" />
+            </div>
+            <span className="font-display text-xl font-bold tracking-tight text-slate-900">StudyVerse</span>
+          </Link>
+          <nav className="hidden items-center gap-8 text-sm font-semibold text-slate-600 md:flex">
+            <a href="#features" className="transition hover:text-blue-600">Features</a>
+            <a href="#focus" className="transition hover:text-blue-600">Focus Workspace</a>
+            <a href="#how" className="transition hover:text-blue-600">How it works</a>
+          </nav>
+          <div className="flex items-center gap-3">
+            {signedIn ? (
               <Link
-                to="/auth"
-                search={{ mode: "signup" }}
-                className="inline-flex items-center gap-1 rounded-full bg-ink px-4 py-2 text-sm font-medium text-background transition hover:opacity-90"
+                to="/dashboard"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4.5 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-blue-700 hover:shadow"
               >
-                Get started
+                Dashboard <ArrowRight className="h-3.5 w-3.5" />
               </Link>
-            </>
-          )}
+            ) : (
+              <>
+                <Link to="/auth" className="text-xs font-semibold text-slate-700 transition hover:text-slate-900 px-2.5 py-1.5 rounded-lg hover:bg-white/60">
+                  Sign in
+                </Link>
+                <Link
+                  to="/auth"
+                  search={{ mode: "signup" }}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4.5 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-blue-700 hover:shadow"
+                >
+                  Get started
+                </Link>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
       {/* Hero */}
-      <section className="mx-auto max-w-6xl px-6 pt-16 pb-24 md:pt-28 md:pb-32">
+      <section className="mx-auto max-w-6xl px-6 pt-16 pb-20 md:pt-24 md:pb-28">
         <div className="mx-auto max-w-3xl text-center">
-          <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs text-ink-muted">
-            <span className="h-1.5 w-1.5 rounded-full bg-brand" />
+          <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3.5 py-1 text-xs font-semibold text-blue-800">
+            <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />
             AI Learning Operating System
           </div>
-          <h1 className="mt-6 font-display text-5xl leading-[1.05] text-ink md:text-7xl">
+          <h1 className="mt-6 font-display text-5xl font-extrabold tracking-tight text-slate-900 md:text-7xl leading-[1.08]">
             Learn smarter.
             <br />
-            <em className="text-ink-muted">Not harder.</em>
+            <span className="text-slate-500 font-normal">Not harder.</span>
           </h1>
-          <p className="mx-auto mt-6 max-w-xl text-lg text-ink-muted">
+          <p className="mx-auto mt-6 max-w-xl text-lg text-slate-600 leading-relaxed font-normal">
             Tell StudyVerse your goal. It builds your roadmap, schedules today's mission,
             and gives you a distraction-free workspace with an AI tutor that actually
             knows what you're studying.
@@ -79,13 +81,13 @@ function Landing() {
             <Link
               to={signedIn ? "/dashboard" : "/auth"}
               search={signedIn ? undefined : { mode: "signup" }}
-              className="inline-flex items-center gap-2 rounded-full bg-ink px-6 py-3 text-sm font-medium text-background transition hover:opacity-90"
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
             >
               Start learning free <ArrowRight className="h-4 w-4" />
             </Link>
             <a
               href="#focus"
-              className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-6 py-3 text-sm font-medium text-ink transition hover:bg-surface-strong"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-6 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-900"
             >
               See Focus Mode
             </a>

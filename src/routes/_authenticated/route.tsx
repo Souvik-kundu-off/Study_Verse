@@ -1,8 +1,12 @@
 import { createFileRoute, redirect, Outlet, Link, useRouter, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useState } from "react";
-import { GraduationCap, LogOut, LayoutDashboard, Target, BookOpen, ShieldCheck } from "lucide-react";
+import { GraduationCap, LayoutDashboard, Target, BookOpen, ShieldCheck, Menu, Activity, Users, Bot, Settings } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { UserNavMenu } from "@/components/ui/UserNavMenu";
+import { ProfileSettingsModal } from "@/components/ui/ProfileSettingsModal";
+import { NotificationPopover } from "@/components/ui/NotificationPopover";
+import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -61,13 +65,16 @@ function AuthedShell() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [routing, setRouting] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [modalTab, setModalTab] = useState<"profile" | "study" | "verification" | "notifications">("profile");
 
   const { data: profile } = useQuery({
     queryKey: ["profile", user.id],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("full_name, onboarding_complete, role")
+        .select("full_name, onboarding_complete, role, avatar_url")
         .eq("id", user.id)
         .maybeSingle();
       if (error) throw error;
@@ -132,20 +139,25 @@ function AuthedShell() {
   const isInstructor = profile?.role === "instructor";
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-background/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-          <Link to={isAdmin ? "/admin" : isInstructor ? "/teacher" : "/dashboard"} className="flex items-center gap-2">
-            <div className="grid h-7 w-7 place-items-center rounded-full bg-ink text-background">
-              <GraduationCap className="h-4 w-4" />
+    <div className="min-h-screen bg-background text-ink">
+      <header className="sticky top-3 z-50 px-4 sm:px-6">
+        <div className="mx-auto flex max-w-6xl items-center justify-between liquid-glass rounded-2xl px-4 py-2 sm:px-5 sm:py-2.5 transition-all duration-300">
+          <Link to={isAdmin ? "/admin" : isInstructor ? "/teacher" : "/dashboard"} className="flex items-center gap-2.5 group">
+            <div className="grid h-8 w-8 place-items-center rounded-xl bg-blue-600 text-white shadow-xs transition group-hover:scale-105">
+              <GraduationCap className="h-4.5 w-4.5" />
             </div>
-            <span className="font-display text-lg text-ink">StudyVerse</span>
+            <span className="font-display text-lg tracking-tight text-slate-900 font-bold">StudyVerse</span>
           </Link>
 
-          <nav className="hidden items-center gap-1 md:flex">
+          {/* Desktop Navigation links */}
+          <nav className="hidden items-center gap-1 md:flex bg-slate-100/60 p-1 rounded-xl border border-slate-200/50">
             {isAdmin ? (
-              <NavLink to="/admin" icon={ShieldCheck} label="Admin Console" />
-            ) : profile?.role === "instructor" ? (
+              <>
+                <NavLink to="/admin" search={{ tab: "telemetry" }} label="Analytics" />
+                <NavLink to="/admin" search={{ tab: "users" }} label="Management" />
+                <NavLink to="/admin" search={{ tab: "ai" }} label="System & AI" />
+              </>
+            ) : isInstructor ? (
               <>
                 <NavLink to="/teacher" icon={GraduationCap} label="Teacher Workspace" />
                 <NavLink to="/courses" icon={BookOpen} label="Courses Directory" />
@@ -153,47 +165,129 @@ function AuthedShell() {
             ) : (
               <>
                 <NavLink to="/dashboard" icon={LayoutDashboard} label="Today" />
-                <NavLink to="/courses" icon={BookOpen} label="Courses Directory" />
                 <NavLink to="/roadmap" icon={Target} label="Roadmap" />
+                <NavLink to="/courses" icon={BookOpen} label="Courses Directory" />
               </>
             )}
           </nav>
 
-          <div className="flex items-center gap-3">
-            <span className="hidden text-sm text-ink-muted sm:block flex items-center gap-1.5">
-              {profile?.full_name ?? user.email}
-              {isAdmin ? (
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-300 dark:border-purple-800">
-                  Admin
-                </span>
-              ) : profile?.role === "instructor" ? (
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800">
-                  Teacher
-                </span>
-              ) : null}
-            </span>
-            <button
-              onClick={signOut}
-              className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-ink-muted transition hover:bg-surface-strong hover:text-ink"
-            >
-              <LogOut className="h-3.5 w-3.5" /> Sign out
-            </button>
+          {/* Right Toolbar */}
+          <div className="flex items-center gap-2">
+            <NotificationPopover userId={user.id} role={profile?.role} />
+            <UserNavMenu
+              email={user.email ?? ""}
+              fullName={profile?.full_name}
+              role={profile?.role}
+              avatarUrl={(profile as any)?.avatar_url}
+              onOpenSettings={(tab) => {
+                setModalTab(tab);
+                setSettingsOpen(true);
+              }}
+              onSignOut={signOut}
+            />
+
+            {/* Mobile Sheet Trigger */}
+            <div className="md:hidden">
+              <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+                <SheetTrigger asChild>
+                  <button className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50">
+                    <Menu className="h-4 w-4" />
+                  </button>
+                </SheetTrigger>
+                <SheetContent side="top" className="rounded-b-2xl pt-6">
+                  <SheetHeader>
+                    <SheetTitle className="text-left text-sm font-bold text-slate-900">Navigation</SheetTitle>
+                  </SheetHeader>
+                  <div className="mt-4 flex flex-col gap-2">
+                    {isAdmin ? (
+                      <>
+                        <MobileNavLink to="/admin" search={{ tab: "telemetry" }} label="Analytics" onClick={() => setMobileOpen(false)} />
+                        <MobileNavLink to="/admin" search={{ tab: "users" }} label="Management" onClick={() => setMobileOpen(false)} />
+                        <MobileNavLink to="/admin" search={{ tab: "ai" }} label="System & AI" onClick={() => setMobileOpen(false)} />
+                      </>
+                    ) : isInstructor ? (
+                      <>
+                        <MobileNavLink to="/teacher" icon={GraduationCap} label="Teacher Workspace" onClick={() => setMobileOpen(false)} />
+                        <MobileNavLink to="/courses" icon={BookOpen} label="Courses Directory" onClick={() => setMobileOpen(false)} />
+                      </>
+                    ) : (
+                      <>
+                        <MobileNavLink to="/dashboard" icon={LayoutDashboard} label="Today's Mission" onClick={() => setMobileOpen(false)} />
+                        <MobileNavLink to="/roadmap" icon={Target} label="Roadmap" onClick={() => setMobileOpen(false)} />
+                        <MobileNavLink to="/courses" icon={BookOpen} label="Courses Directory" onClick={() => setMobileOpen(false)} />
+                      </>
+                    )}
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </div>
           </div>
         </div>
       </header>
-      <Outlet />
+
+      {/* Profile & Preferences Modal */}
+      <ProfileSettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        initialTab={modalTab}
+        userId={user.id}
+        userEmail={user.email ?? ""}
+      />
+
+      <div className="pt-2">
+        <Outlet />
+      </div>
     </div>
   );
 }
 
-function NavLink({ to, icon: Icon, label }: { to: string; icon: React.ElementType; label: string }) {
+function NavLink({
+  to,
+  search,
+  icon: Icon,
+  label,
+}: {
+  to: string;
+  search?: Record<string, any>;
+  icon?: React.ElementType;
+  label: string;
+}) {
   return (
     <Link
       to={to}
-      className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm text-ink-muted transition hover:bg-surface-strong hover:text-ink"
-      activeProps={{ className: "bg-surface-strong text-ink" }}
+      search={search}
+      className="inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-bold text-slate-600 transition hover:bg-white/80 hover:text-slate-900"
+      activeProps={{ className: "bg-white text-blue-600 font-extrabold shadow-2xs border border-slate-200/60" }}
     >
-      <Icon className="h-4 w-4" /> {label}
+      {Icon && <Icon className="h-4 w-4" />}
+      <span>{label}</span>
+    </Link>
+  );
+}
+
+function MobileNavLink({
+  to,
+  search,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  to: string;
+  search?: Record<string, any>;
+  icon?: React.ElementType;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <Link
+      to={to}
+      search={search}
+      onClick={onClick}
+      className="flex items-center gap-3 rounded-xl p-3 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+      activeProps={{ className: "bg-blue-50 text-blue-600 font-bold border border-blue-200" }}
+    >
+      {Icon && <Icon className="h-4 w-4" />}
+      <span>{label}</span>
     </Link>
   );
 }

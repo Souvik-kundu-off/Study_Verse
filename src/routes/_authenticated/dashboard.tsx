@@ -9,6 +9,7 @@ import { WeeklyChart } from "@/components/progress/WeeklyChart";
 import { GoalProgress } from "@/components/progress/GoalProgress";
 import { useState, useEffect } from "react";
 import { CreateTrackModal } from "@/components/study/CreateTrackModal";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowRight, Flame, Clock, Bot, CheckCircle2, Circle, Target, RotateCcw, Plus, BookMarked, Sunrise, Sun, Sunset, Moon } from "lucide-react";
 import { z } from "zod";
 
@@ -86,7 +87,7 @@ function Dashboard() {
   }, [profile, navigate]);
 
   // 1. Fetch all goals of user (Multi-Subject parallel tracks)
-  const { data: allGoals } = useQuery({
+  const { data: allGoals, isLoading: goalsLoading } = useQuery({
     queryKey: ["all-goals", user.id],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -109,7 +110,7 @@ function Dashboard() {
 
   const activeGoal = allGoals?.find((g) => g.id === selectedGoalId) ?? allGoals?.[0];
 
-  const { data: topics } = useQuery({
+  const { data: topics, isLoading: topicsLoading } = useQuery({
     enabled: !!activeGoal?.id,
     queryKey: ["goal-topics", activeGoal?.id],
     queryFn: async () => {
@@ -160,6 +161,34 @@ function Dashboard() {
       default: return <BookMarked className="w-3.5 h-3.5 text-emerald-500" />;
     }
   };
+
+  if (goalsLoading || (activeGoal?.id && topicsLoading)) {
+    return (
+      <main className="mx-auto max-w-6xl px-6 py-8 md:py-12 space-y-8">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-32 rounded-lg" />
+            <Skeleton className="h-10 w-64 rounded-xl" />
+          </div>
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-8 w-28 rounded-full" />
+            <Skeleton className="h-8 w-28 rounded-full" />
+          </div>
+        </div>
+
+        <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
+          <div className="space-y-6">
+            <Skeleton className="h-64 w-full rounded-3xl" />
+            <Skeleton className="h-48 w-full rounded-3xl" />
+          </div>
+          <div className="space-y-6">
+            <Skeleton className="h-72 w-full rounded-3xl" />
+            <Skeleton className="h-40 w-full rounded-3xl" />
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-8 md:py-12">

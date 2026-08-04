@@ -8,12 +8,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   X, Play, Pause, RotateCcw, FileText, BookOpen, Bot,
-  Send, Loader2, CheckCircle2, Video, PenLine, Layers, HelpCircle, Code2, Wand2, ExternalLink, RefreshCw, Maximize2, Minimize2, Save, Search, Download, Trash2, Upload
+  Send, Loader2, CheckCircle2, Video, PenLine, Layers, HelpCircle, Code2, Wand2, ExternalLink, RefreshCw, Maximize2, Minimize2, Save, Search, Download, Trash2, Upload, Columns, PanelLeft, PanelRight, Sparkles
 } from "lucide-react";
 import { FlashcardDeck } from "@/components/study/FlashcardDeck";
 import { QuizModal } from "@/components/study/QuizModal";
 import { CodingPlayground } from "@/components/tools/CodingPlayground";
 import { FormattedText } from "@/components/ui/FormattedText";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ingestDocument } from "@/lib/rag.server";
 
 export const Route = createFileRoute("/_authenticated/focus/$topicId")({
@@ -50,6 +51,33 @@ function FocusWorkspace() {
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
   const [generatingCards, setGeneratingCards] = useState(false);
   const [showVideo, setShowVideo] = useState(true);
+  const [paneMode, setPaneMode] = useState<"split" | "video-only" | "workspace-only">("split");
+  const [splitRatio, setSplitRatio] = useState<number>(60);
+  const [isDragging, setIsDragging] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const newRatio = ((moveEvent.clientX - rect.left) / rect.width) * 100;
+      const clamped = Math.max(20, Math.min(80, newRatio));
+      setSplitRatio(clamped);
+    };
+
+    const onMouseUp = () => {
+      setIsDragging(false);
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  }, []);
+
   const [docName, setDocName] = useState("");
   const [docText, setDocText] = useState("");
   const [ingesting, setIngesting] = useState(false);
@@ -306,38 +334,84 @@ function FocusWorkspace() {
   const concepts = (topic?.key_concepts as string[]) ?? [];
   const goalTitle = (topic as unknown as { goals?: { title: string } })?.goals?.title;
 
+  const targetMinutes = topic?.estimated_minutes ?? 25;
+  const targetSeconds = targetMinutes * 60;
+  const timerProgressPct = Math.min(100, Math.round((elapsed / targetSeconds) * 100));
+
   return (
-    <div className="flex h-screen flex-col bg-background text-ink">
+    <div className="flex h-screen flex-col bg-background text-slate-900">
       {/* Top Bar */}
-      <header className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4 border-b border-border bg-background/95 px-6 py-3 backdrop-blur">
+      <header className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4 border-b border-slate-200 bg-white/95 px-6 py-2.5 backdrop-blur-md">
         <div className="min-w-0">
-          <p className="truncate text-xs text-ink-subtle">{goalTitle}</p>
-          <h1 className="truncate text-sm font-medium text-ink">
+          <p className="truncate text-xs font-semibold uppercase tracking-wider text-slate-500">{goalTitle || "StudyVerse Focus"}</p>
+          <h1 className="truncate text-sm font-bold text-slate-900">
             {topic?.title ?? "Loading Lesson…"}
           </h1>
         </div>
 
-        {/* Timer Controls */}
-        <div className="flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-sm">
-          <span className="tabular-nums font-mono text-ink">{fmt(elapsed)}</span>
-          <span className="h-3 w-px bg-border" />
-          <button
-            onClick={() => setRunning((r) => !r)}
-            className="text-ink-muted transition hover:text-ink"
-            aria-label={running ? "Pause" : "Play"}
-          >
-            {running ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-          </button>
-          <button
-            onClick={() => {
-              setElapsed(0);
-              elapsedRef.current = 0;
-            }}
-            className="text-ink-muted transition hover:text-ink"
-            aria-label="Reset"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-          </button>
+        {/* Timer & View Controls */}
+        <div className="flex items-center gap-3">
+          {/* View Split Mode Switcher */}
+          <div className="hidden sm:flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-100/70 p-1">
+            <button
+              onClick={() => setPaneMode("video-only")}
+              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                paneMode === "video-only" ? "bg-white text-blue-600 shadow-2xs" : "text-slate-600 hover:text-slate-900"
+              }`}
+              title="Lesson Video Only"
+            >
+              <PanelLeft className="h-3.5 w-3.5" />
+              <span>Lesson</span>
+            </button>
+            <button
+              onClick={() => setPaneMode("split")}
+              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                paneMode === "split" ? "bg-white text-blue-600 shadow-2xs" : "text-slate-600 hover:text-slate-900"
+              }`}
+              title="Split View"
+            >
+              <Columns className="h-3.5 w-3.5" />
+              <span>Split</span>
+            </button>
+            <button
+              onClick={() => setPaneMode("workspace-only")}
+              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                paneMode === "workspace-only" ? "bg-white text-blue-600 shadow-2xs" : "text-slate-600 hover:text-slate-900"
+              }`}
+              title="AI Workspace Only"
+            >
+              <PanelRight className="h-3.5 w-3.5" />
+              <span>Workspace</span>
+            </button>
+          </div>
+
+          {/* Pomodoro Timer Badge */}
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700">
+            <span className="tabular-nums font-mono text-slate-900">{fmt(elapsed)}</span>
+            <span className="h-3 w-px bg-slate-300" />
+            <span className={`text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.2 rounded-md ${
+              running ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-800"
+            }`}>
+              {running ? "Focusing" : "Paused"}
+            </span>
+            <button
+              onClick={() => setRunning((r) => !r)}
+              className="text-slate-500 transition hover:text-slate-900"
+              aria-label={running ? "Pause" : "Play"}
+            >
+              {running ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+            </button>
+            <button
+              onClick={() => {
+                setElapsed(0);
+                elapsedRef.current = 0;
+              }}
+              className="text-slate-500 transition hover:text-slate-900"
+              aria-label="Reset"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
 
         {/* Complete / Fullscreen / Exit */}
@@ -350,120 +424,143 @@ function FocusWorkspace() {
                 try { await document.exitFullscreen(); } catch {}
               }
             }}
-            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-ink-muted transition hover:bg-surface-strong hover:text-ink"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
             title="Toggle Distraction-Free Full Screen Focus Mode"
           >
             <Maximize2 className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Focus Fullscreen</span>
+            <span className="hidden sm:inline">Fullscreen</span>
           </button>
           <button
             onClick={markComplete}
-            className="hidden items-center gap-1.5 rounded-full bg-brand px-4 py-1.5 text-xs font-medium text-brand-foreground transition hover:opacity-90 sm:inline-flex"
+            className="hidden items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white shadow-xs transition hover:bg-blue-700 sm:inline-flex"
           >
             <CheckCircle2 className="h-3.5 w-3.5" /> Mark complete
           </button>
           <button
             onClick={exitFocus}
-            className="inline-flex items-center gap-1 rounded-full border border-border px-3 py-1.5 text-xs text-ink-muted transition hover:bg-surface-strong hover:text-ink"
+            className="inline-flex items-center gap-1 rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
           >
             <X className="h-3.5 w-3.5" /> Exit
           </button>
         </div>
       </header>
 
-      {/* Main split */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[1.6fr_1fr]">
+      {/* Sleek Pomodoro Focus Progress Bar */}
+      <div className="h-1 w-full bg-slate-100 relative overflow-hidden">
+        <div
+          className="h-full bg-blue-600 transition-all duration-500 ease-out"
+          style={{ width: `${timerProgressPct}%` }}
+        />
+      </div>
+
+      {/* Main split with Draggable Slider */}
+      <div
+        ref={containerRef}
+        className={`min-h-0 flex-1 relative flex flex-col md:flex-row ${
+          isDragging ? "select-none" : ""
+        }`}
+      >
         {/* Left: Primary Lesson Area */}
-        <section className="min-h-0 overflow-auto border-b border-border md:border-b-0 md:border-r p-6 md:p-10">
-          <div className="mx-auto max-w-2xl space-y-8">
-            {/* Header */}
-            <div>
-              <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-ink-subtle">
-                <span>Lesson</span>
-                <span>•</span>
-                <span>{topic?.estimated_minutes ?? 20} mins</span>
-              </div>
-              <h2 className="mt-2 font-display text-3xl md:text-4xl text-ink font-semibold">{topic?.title}</h2>
-              <p className="mt-2 text-base text-ink-muted leading-relaxed">{topic?.description}</p>
-            </div>
-
-            {/* YouTube Video Section */}
-            {ytLoading && (
-              <div className="flex aspect-video items-center justify-center rounded-2xl border border-border bg-surface text-ink-muted text-sm">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin text-brand" /> Finding best video tutorial…
-              </div>
-            )}
-
-            {!ytLoading && ytVideo && (
-              <div className="rounded-2xl border border-border overflow-hidden bg-black shadow-sm">
-                <div className="flex items-center justify-between bg-surface px-4 py-2 text-xs border-b border-border">
-                  <span className="inline-flex items-center gap-1.5 font-medium text-ink">
-                    <Video className="h-3.5 w-3.5 text-red-500" /> YouTube Tutorial
-                  </span>
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => setShowVideo(!showVideo)}
-                      className="text-ink-muted hover:text-ink underline"
-                    >
-                      {showVideo ? "Hide Video" : "Show Video"}
-                    </button>
-                    <a
-                      href={`https://www.youtube.com/watch?v=${ytVideo.videoId}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-ink-muted hover:text-ink"
-                    >
-                      Watch on YouTube <ExternalLink className="h-3 w-3" />
-                    </a>
-                  </div>
+        {paneMode !== "workspace-only" && (
+          <section
+            style={{ width: paneMode === "split" ? `${splitRatio}%` : "100%" }}
+            className={`min-h-0 overflow-auto border-b border-slate-200 md:border-b-0 p-6 md:p-10 transition-all duration-75 ${
+              paneMode === "split" ? "" : "max-w-4xl mx-auto"
+            }`}
+          >
+            <div className="mx-auto max-w-2xl space-y-8">
+              {/* Header */}
+              <div>
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <span>Lesson</span>
+                  <span>•</span>
+                  <span>{targetMinutes} mins</span>
                 </div>
-                {showVideo && (
-                  <div className="aspect-video w-full">
-                    <iframe
-                      src={`https://www.youtube-nocookie.com/embed/${ytVideo.videoId}?autoplay=0`}
-                      title={ytVideo.title}
-                      className="h-full w-full border-0"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* AI Generated Notes / Lesson Text */}
-            <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
-              <div className="flex items-center justify-between border-b border-border pb-3">
-                <h3 className="inline-flex items-center gap-2 font-display text-lg text-ink">
-                  <BookOpen className="h-4 w-4 text-brand" /> Lesson Notes & Guide
-                </h3>
-                <button
-                  onClick={handleAutoNotes}
-                  disabled={generatingNotes}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline disabled:opacity-50"
-                >
-                  <RefreshCw className={`h-3 w-3 ${generatingNotes ? "animate-spin" : ""}`} />
-                  {generatingNotes ? "Generating..." : "Regenerate"}
-                </button>
+                <h2 className="mt-2 font-display text-3xl md:text-4xl text-slate-900 font-extrabold">{topic?.title}</h2>
+                <p className="mt-2 text-base text-slate-700 leading-relaxed font-normal">{topic?.description}</p>
               </div>
 
-              {generatingNotes && (
-                <div className="py-12 text-center text-sm text-ink-muted">
-                  <Loader2 className="mx-auto h-6 w-6 animate-spin text-brand mb-2" />
-                  Generating custom structured notes for {topic?.title}…
+              {/* YouTube Video Section with Skeleton Loading */}
+              {ytLoading && (
+                <div className="space-y-2">
+                  <Skeleton className="aspect-video w-full rounded-2xl" />
+                  <p className="text-center text-xs font-medium text-slate-500">Finding best video tutorial…</p>
                 </div>
               )}
+
+              {!ytLoading && ytVideo && (
+                <div className="rounded-2xl border border-slate-200 overflow-hidden bg-black shadow-xs">
+                  <div className="flex items-center justify-between bg-slate-50 px-4 py-2 text-xs border-b border-slate-200">
+                    <span className="inline-flex items-center gap-1.5 font-semibold text-slate-800">
+                      <Video className="h-3.5 w-3.5 text-red-500" /> YouTube Tutorial
+                    </span>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setShowVideo(!showVideo)}
+                        className="text-slate-600 font-medium hover:text-slate-900 underline"
+                      >
+                        {showVideo ? "Hide Video" : "Show Video"}
+                      </button>
+                      <a
+                        href={`https://www.youtube.com/watch?v=${ytVideo.videoId}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-slate-600 font-medium hover:text-slate-900"
+                      >
+                        Watch on YouTube <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                  </div>
+                  {showVideo && (
+                    <div className="aspect-video w-full">
+                      <iframe
+                        src={`https://www.youtube-nocookie.com/embed/${ytVideo.videoId}?autoplay=0`}
+                        title={ytVideo.title}
+                        className="h-full w-full border-0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* AI Generated Notes / Lesson Text */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <h3 className="inline-flex items-center gap-2 font-display text-lg font-bold text-slate-900">
+                    <BookOpen className="h-4 w-4 text-blue-600" /> Lesson Notes & Guide
+                  </h3>
+                  <button
+                    onClick={handleAutoNotes}
+                    disabled={generatingNotes}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline disabled:opacity-50"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${generatingNotes ? "animate-spin" : ""}`} />
+                    {generatingNotes ? "Generating..." : "Regenerate"}
+                  </button>
+                </div>
+
+                {generatingNotes && (
+                  <div className="space-y-3 py-6">
+                    <Skeleton className="h-5 w-2/3 rounded-lg" />
+                    <Skeleton className="h-4 w-full rounded-lg" />
+                    <Skeleton className="h-4 w-5/6 rounded-lg" />
+                    <Skeleton className="h-4 w-4/5 rounded-lg" />
+                    <p className="text-center text-xs font-medium text-slate-500 pt-2">Generating structured AI notes…</p>
+                  </div>
+                )}
 
               {!generatingNotes && aiLessonGuide && (
                 <FormattedText content={aiLessonGuide} className="mt-4" />
               )}
 
               {!generatingNotes && !aiLessonGuide && (
-                <div className="py-8 text-center text-sm text-ink-muted">
+                <div className="py-8 text-center text-sm text-slate-600">
                   <p>No lesson notes generated yet.</p>
                   <button
                     onClick={handleAutoNotes}
-                    className="mt-3 inline-flex items-center gap-2 rounded-full bg-brand px-4 py-2 text-xs font-medium text-brand-foreground"
+                    className="mt-3 inline-flex items-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700"
                   >
                     <Wand2 className="h-3.5 w-3.5" /> Generate Lesson Notes
                   </button>
@@ -474,12 +571,12 @@ function FocusWorkspace() {
             {/* Key Concepts */}
             {concepts.length > 0 && (
               <div>
-                <h3 className="text-xs uppercase tracking-widest text-ink-subtle font-medium">Key Concepts to Master</h3>
+                <h3 className="text-xs uppercase tracking-widest text-slate-600 font-bold">Key Concepts to Master</h3>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {concepts.map((c) => (
                     <span
                       key={c}
-                      className="inline-flex items-center rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-ink-muted"
+                      className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-800"
                     >
                       🔑 {c}
                     </span>
@@ -489,222 +586,237 @@ function FocusWorkspace() {
             )}
 
             {/* Complete Lesson CTA */}
-            <div className="pt-4 border-t border-border flex justify-between items-center">
-              <span className="text-xs text-ink-subtle">Finished reading and practicing?</span>
+            <div className="pt-4 border-t border-slate-200 flex justify-between items-center">
+              <span className="text-xs text-slate-600 font-medium">Finished reading and practicing?</span>
               <button
                 onClick={markComplete}
-                className="inline-flex items-center gap-2 rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-brand-foreground transition hover:opacity-90 shadow-sm"
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 shadow-xs"
               >
                 Mark complete <CheckCircle2 className="h-4 w-4" />
               </button>
             </div>
           </div>
         </section>
+        )}
+
+        {/* Resizable Slider Drag Handle */}
+        {paneMode === "split" && (
+          <div
+            onMouseDown={handleMouseDown}
+            onDoubleClick={() => setSplitRatio(60)}
+            className="hidden md:flex w-2.5 bg-slate-200/80 hover:bg-blue-500 active:bg-blue-600 cursor-col-resize items-center justify-center group transition-colors select-none z-20 shrink-0"
+            title="Drag left/right to resize panels (Double-click to reset 60/40)"
+          >
+            <div className="h-8 w-1 rounded-full bg-slate-400 group-hover:bg-white transition-colors" />
+          </div>
+        )}
 
         {/* Right: Interactive Study Panel */}
-        <aside className="flex min-h-0 flex-col bg-surface">
-          <div className="flex shrink-0 border-b border-border overflow-x-auto">
-            <TabBtn label="Tutor" icon={Bot} active={tab === "tutor"} onClick={() => setTab("tutor")} />
-            <TabBtn label="My Notes" icon={PenLine} active={tab === "notes"} onClick={() => setTab("notes")} />
-            <TabBtn label="Quiz" icon={HelpCircle} active={tab === "quiz"} onClick={() => setTab("quiz")} />
-            <TabBtn label="Cards" icon={Layers} active={tab === "flashcards"} onClick={() => setTab("flashcards")} />
-            <TabBtn label="Sandbox" icon={Code2} active={tab === "playground"} onClick={() => setTab("playground")} />
-            <TabBtn label="Resources" icon={BookOpen} active={tab === "resources"} onClick={() => setTab("resources")} />
-          </div>
-
-          {/* Tab 1: AI Tutor */}
-          {tab === "tutor" && <TutorPanel topicId={topicId} />}
-
-          {/* Tab 2: Personal Student Notes */}
-          {tab === "notes" && (
-            <div className="flex min-h-0 flex-1 flex-col p-4 space-y-3">
-              <div className="flex items-center justify-between pb-1 text-xs text-ink-subtle">
-                <span className="inline-flex items-center gap-1 font-medium">
-                  <PenLine className="h-3.5 w-3.5 text-indigo-500" /> Student Personal Notebook
-                </span>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={handleDownloadPersonalNotes}
-                    className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-[11px] font-medium text-ink-muted hover:text-ink transition"
-                    title="Download notes to file"
-                  >
-                    <Download className="h-3 w-3" /> Export
-                  </button>
-                  {personalNotes && (
-                    <button
-                      onClick={handleClearPersonalNotes}
-                      className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-[11px] font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition"
-                      title="Clear personal notes"
-                    >
-                      <Trash2 className="h-3 w-3" /> Clear
-                    </button>
-                  )}
-                  <button
-                    onClick={async () => {
-                      await supabase.from("notes").upsert(
-                        { user_id: user.id, topic_id: topicId, content: personalNotes },
-                        { onConflict: "user_id,topic_id" }
-                      );
-                      toast.success("Saved personal notes!");
-                    }}
-                    className="inline-flex items-center gap-1 rounded-full bg-ink px-3 py-1 text-xs font-semibold text-background hover:opacity-90 transition shadow-sm"
-                  >
-                    <Save className="h-3 w-3" /> Save Notes
-                  </button>
-                </div>
-              </div>
-              <textarea
-                value={personalNotes}
-                onChange={(e) => setPersonalNotes(e.target.value)}
-                placeholder="Type your own personal takeaways, formulas, or questions here to review later... (This notebook is private to you)"
-                className="flex-1 resize-none rounded-2xl border border-border bg-background p-4 font-sans text-sm text-ink placeholder:text-ink-subtle focus:border-ink focus:outline-none"
-              />
+        {paneMode !== "video-only" && (
+          <aside
+            style={{ width: paneMode === "split" ? `${100 - splitRatio}%` : "100%" }}
+            className="flex min-h-0 flex-col bg-slate-50 border-l border-slate-200 transition-all duration-75"
+          >
+            <div className="flex shrink-0 border-b border-slate-200 bg-white overflow-x-auto">
+              <TabBtn label="Tutor" icon={Bot} active={tab === "tutor"} onClick={() => setTab("tutor")} />
+              <TabBtn label="My Notes" icon={PenLine} active={tab === "notes"} onClick={() => setTab("notes")} />
+              <TabBtn label="Quiz" icon={HelpCircle} active={tab === "quiz"} onClick={() => setTab("quiz")} />
+              <TabBtn label="Cards" icon={Layers} active={tab === "flashcards"} onClick={() => setTab("flashcards")} />
+              <TabBtn label="Sandbox" icon={Code2} active={tab === "playground"} onClick={() => setTab("playground")} />
+              <TabBtn label="Resources" icon={BookOpen} active={tab === "resources"} onClick={() => setTab("resources")} />
             </div>
-          )}
 
-          {/* Tab 3: Interactive Quiz */}
-          {tab === "quiz" && (
-            <QuizModal
-              quiz={quizData as any}
-              loading={generatingQuiz}
-              onGenerate={async () => {
-                setGeneratingQuiz(true);
-                await genQuiz({ data: { topicId } });
-                refetchQuiz();
-                setGeneratingQuiz(false);
-              }}
-            />
-          )}
+            {/* Tab 1: AI Tutor */}
+            {tab === "tutor" && <TutorPanel topicId={topicId} />}
 
-          {/* Tab 4: Flashcards */}
-          {tab === "flashcards" && (
-            <FlashcardDeck
-              cards={(cardsData as any) ?? []}
-              loading={generatingCards}
-              onGenerateMore={async () => {
-                setGeneratingCards(true);
-                await genCards({ data: { topicId } });
-                refetchCards();
-                setGeneratingCards(false);
-              }}
-            />
-          )}
-
-          {/* Tab 5: Coding Sandbox */}
-          {tab === "playground" && <CodingPlayground />}
-
-          {/* Tab 6: Clickable Interactive Resources & Grounded Material Upload */}
-          {tab === "resources" && (
-            <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
-              {/* Grounded Course Material Ingestion Box */}
-              <div className="rounded-2xl border-2 border-indigo-500/30 bg-gradient-to-br from-indigo-50/70 via-white to-purple-50/70 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/40 p-4 shadow-sm space-y-3">
-                <div className="flex items-center gap-2 border-b border-indigo-200/50 dark:border-slate-800 pb-2">
-                  <Upload className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-950 dark:text-indigo-200">
-                    Add Grounded Textbook / PDF Notes
-                  </h4>
+            {/* Tab 2: Personal Student Notes */}
+            {tab === "notes" && (
+              <div className="flex min-h-0 flex-1 flex-col p-4 space-y-3">
+                <div className="flex items-center justify-between pb-1 text-xs text-slate-500">
+                  <span className="inline-flex items-center gap-1 font-semibold">
+                    <PenLine className="h-3.5 w-3.5 text-blue-600" /> Personal Notebook
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={handleDownloadPersonalNotes}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 transition"
+                      title="Download notes to file"
+                    >
+                      <Download className="h-3 w-3" /> Export
+                    </button>
+                    {personalNotes && (
+                      <button
+                        onClick={handleClearPersonalNotes}
+                        className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-100 transition"
+                        title="Clear personal notes"
+                      >
+                        <Trash2 className="h-3 w-3" /> Clear
+                      </button>
+                    )}
+                    <button
+                      onClick={async () => {
+                        await supabase.from("notes").upsert(
+                          { user_id: user.id, topic_id: topicId, content: personalNotes },
+                          { onConflict: "user_id,topic_id" }
+                        );
+                        toast.success("Saved personal notes!");
+                      }}
+                      className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 transition shadow-xs"
+                    >
+                      <Save className="h-3 w-3" /> Save Notes
+                    </button>
+                  </div>
                 </div>
-                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                  Paste textbook excerpts, lecture slides, or documentation text below to generate 100% grounded flashcards & quizzes with page citations!
-                </p>
-                <div className="space-y-2">
-                  <input
-                    type="text"
-                    placeholder="Document Name (e.g. Chapter 3 Notes.pdf)"
-                    value={docName}
-                    onChange={(e) => setDocName(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-1.5 text-xs text-ink placeholder:text-ink-subtle focus:outline-none"
-                  />
-                  <textarea
-                    rows={3}
-                    placeholder="Paste textbook or lecture text here..."
-                    value={docText}
-                    onChange={(e) => setDocText(e.target.value)}
-                    className="w-full resize-none rounded-xl border border-border bg-background p-3 text-xs text-ink placeholder:text-ink-subtle focus:outline-none"
-                  />
-                  <button
-                    disabled={ingesting || !docText.trim() || !docName.trim()}
-                    onClick={async () => {
-                      setIngesting(true);
-                      try {
-                        const res = await ingestFn({
-                          data: {
-                            topicId,
-                            goalId: topic?.goal_id ?? undefined,
-                            documentName: docName.trim(),
-                            rawText: docText.trim(),
-                          },
-                        });
-                        toast.success(`Ingested ${res.chunksIngested} chunks from "${docName}"! RAG vector index ready.`);
-                        setDocText("");
-                        setDocName("");
-                      } catch (err) {
-                        toast.error(err instanceof Error ? err.message : "Ingestion failed");
-                      } finally {
-                        setIngesting(false);
-                      }
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-indigo-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-indigo-700 disabled:opacity-50 shadow-sm"
-                  >
-                    {ingesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                    {ingesting ? "Indexing Chunks..." : "Ingest & Vector Index Material"}
-                  </button>
-                </div>
+                <textarea
+                  value={personalNotes}
+                  onChange={(e) => setPersonalNotes(e.target.value)}
+                  placeholder="Type your own personal takeaways, formulas, or questions here to review later... (This notebook is private to you)"
+                  className="flex-1 resize-none rounded-2xl border border-slate-200 bg-white p-4 font-sans text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none shadow-xs"
+                />
               </div>
+            )}
 
-              {resources.length === 0 && (
-                <p className="text-sm text-ink-muted">No specific external resources listed for this topic.</p>
-              )}
-              {resources.map((r, i) => {
-                const goalTitle = (topic as any)?.goals?.title ?? "";
-                const cleanTitle = `${goalTitle} ${topic?.title ?? ""} ${r.title}`
-                  .replace(/\bworkout\b/gi, "problems solution")
-                  .replace(/\bexercise\b/gi, "practice problems")
-                  .replace(/\bexercises\b/gi, "practice problems");
-                const searchQuery = encodeURIComponent(`${cleanTitle} lecture tutorial`);
-                return (
-                  <div key={i} className="rounded-xl border border-border bg-background p-3.5 shadow-sm space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="rounded-full bg-surface-strong px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-ink-muted">
-                          {r.kind}
-                        </span>
-                        <span className="text-sm font-semibold text-ink">{r.title}</span>
+            {/* Tab 3: Interactive Quiz */}
+            {tab === "quiz" && (
+              <QuizModal
+                quiz={quizData as any}
+                loading={generatingQuiz}
+                onGenerate={async () => {
+                  setGeneratingQuiz(true);
+                  await genQuiz({ data: { topicId } });
+                  refetchQuiz();
+                  setGeneratingQuiz(false);
+                }}
+              />
+            )}
+
+            {/* Tab 4: Flashcards */}
+            {tab === "flashcards" && (
+              <FlashcardDeck
+                cards={(cardsData as any) ?? []}
+                loading={generatingCards}
+                onGenerate={async () => {
+                  setGeneratingCards(true);
+                  await genCards({ data: { topicId } });
+                  refetchCards();
+                  setGeneratingCards(false);
+                }}
+              />
+            )}
+
+            {/* Tab 5: Coding Sandbox */}
+            {tab === "playground" && <CodingPlayground />}
+
+            {/* Tab 6: Resources & RAG Vector Ingestion */}
+            {tab === "resources" && (
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {/* RAG Custom Material Ingestion Card */}
+                <div className="rounded-2xl border border-indigo-200 bg-indigo-50/50 p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-indigo-950 font-bold text-xs">
+                    <Sparkles className="w-4 h-4 text-indigo-600" /> Index Custom Study Material (RAG AI)
+                  </div>
+                  <p className="text-[11px] text-slate-600 leading-relaxed">
+                    Paste textbook extracts or slide notes to feed into the AI Tutor for instant RAG vector context retrieval during study.
+                  </p>
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      placeholder="Document Name (e.g. Chapter 3 Notes.pdf)"
+                      value={docName}
+                      onChange={(e) => setDocName(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none"
+                    />
+                    <textarea
+                      rows={3}
+                      placeholder="Paste textbook or lecture text here..."
+                      value={docText}
+                      onChange={(e) => setDocText(e.target.value)}
+                      className="w-full resize-none rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none"
+                    />
+                    <button
+                      disabled={ingesting || !docText.trim() || !docName.trim()}
+                      onClick={async () => {
+                        setIngesting(true);
+                        try {
+                          const res = await ingestFn({
+                            data: {
+                              topicId,
+                              goalId: topic?.goal_id ?? undefined,
+                              documentName: docName.trim(),
+                              rawText: docText.trim(),
+                            },
+                          });
+                          toast.success(`Ingested ${res.chunksIngested} chunks from "${docName}"! RAG vector index ready.`);
+                          setDocText("");
+                          setDocName("");
+                        } catch (err) {
+                          toast.error(err instanceof Error ? err.message : "Ingestion failed");
+                        } finally {
+                          setIngesting(false);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-indigo-700 disabled:opacity-50 shadow-xs"
+                    >
+                      {ingesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                      {ingesting ? "Indexing Chunks..." : "Ingest & Vector Index Material"}
+                    </button>
+                  </div>
+                </div>
+
+                {resources.length === 0 && (
+                  <p className="text-sm text-slate-500">No specific external resources listed for this topic.</p>
+                )}
+                {resources.map((r, i) => {
+                  const goalTitle = (topic as any)?.goals?.title ?? "";
+                  const cleanTitle = `${goalTitle} ${topic?.title ?? ""} ${r.title}`
+                    .replace(/\bworkout\b/gi, "problems solution")
+                    .replace(/\bexercise\b/gi, "practice problems")
+                    .replace(/\bexercises\b/gi, "practice problems");
+                  const searchQuery = encodeURIComponent(`${cleanTitle} lecture tutorial`);
+                  return (
+                    <div key={i} className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-600">
+                            {r.kind}
+                          </span>
+                          <span className="text-sm font-semibold text-slate-900">{r.title}</span>
+                        </div>
+                      </div>
+                      {r.note && <p className="text-xs text-slate-600 leading-relaxed">{r.note}</p>}
+                      <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+                        <a
+                          href={`https://www.youtube.com/results?search_query=${searchQuery}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 rounded-md bg-red-50 px-2.5 py-1 text-[11px] font-medium text-red-600 hover:bg-red-100 transition"
+                        >
+                          <Video className="w-3 h-3" /> YouTube
+                        </a>
+                        <a
+                          href={`https://www.google.com/search?q=${searchQuery}+documentation`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-600 hover:bg-indigo-100 transition"
+                        >
+                          <Search className="w-3 h-3" /> Docs Search
+                        </a>
+                        <a
+                          href={`https://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(r.title)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-200 transition"
+                        >
+                          <BookOpen className="w-3 h-3" /> Wikipedia
+                        </a>
                       </div>
                     </div>
-                    {r.note && <p className="text-xs text-ink-muted leading-relaxed">{r.note}</p>}
-                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/50">
-                      <a
-                        href={`https://www.youtube.com/results?search_query=${searchQuery}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 rounded-md bg-red-50 dark:bg-red-950/40 px-2.5 py-1 text-[11px] font-medium text-red-600 dark:text-red-400 hover:bg-red-100 transition"
-                      >
-                        <Video className="w-3 h-3" /> YouTube
-                      </a>
-                      <a
-                        href={`https://www.google.com/search?q=${searchQuery}+documentation`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 rounded-md bg-indigo-50 dark:bg-indigo-950/40 px-2.5 py-1 text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition"
-                      >
-                        <Search className="w-3 h-3" /> Docs Search
-                      </a>
-                      <a
-                        href={`https://en.wikipedia.org/wiki/Special:Search?search=${encodeURIComponent(r.title)}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 rounded-md bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-[11px] font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-200 transition"
-                      >
-                        <BookOpen className="w-3 h-3" /> Wikipedia
-                      </a>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </aside>
+                  );
+                })}
+              </div>
+            )}
+          </aside>
+        )}
       </div>
     </div>
   );

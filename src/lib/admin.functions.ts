@@ -107,7 +107,7 @@ export const getAdminUsers = createServerFn({ method: "GET" })
 
     const { data: users, error } = await supabase
       .from("profiles")
-      .select("id, full_name, role, onboarding_complete, created_at, updated_at")
+      .select("id, full_name, role, onboarding_complete, is_verified_instructor, institution_name, academic_title, specialization, teaching_experience_years, bio, portfolio_url, created_at, updated_at")
       .order("created_at", { ascending: false });
 
     if (error) throw new Error(error.message);
@@ -151,6 +151,44 @@ export const updateUserRole = createServerFn({ method: "POST" })
 
     if (error) throw new Error(error.message);
     return { success: true, targetUserId: data.targetUserId, role: data.role };
+  });
+
+const verifyInstructorInput = z.object({
+  targetUserId: z.string().uuid(),
+  isVerified: z.boolean(),
+});
+
+export const verifyInstructor = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((input: unknown) => verifyInstructorInput.parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    await requireAdminRole(supabase, userId);
+
+    const adminDb = getAdminSupabase();
+
+    const { error } = await adminDb
+      .from("profiles")
+      .update({ is_verified_instructor: data.isVerified })
+      .eq("id", data.targetUserId);
+
+    if (error) throw new Error(error.message);
+
+    // Broadcast automated notification to teacher
+    try {
+      await (adminDb.from as any)("notifications").insert({
+        user_id: data.targetUserId,
+        title: data.isVerified ? "Instructor Verification Approved 🎉" : "Instructor Verification Status Update",
+        message: data.isVerified
+          ? "Congratulations! Your educator credentials have been approved by platform administrators. You can now create and publish official courses."
+          : "Your instructor account verification has been set to pending or rejected by administrators. Contact support if you have questions.",
+        type: "system",
+      });
+    } catch {
+      /* Silently ignore notification failure */
+    }
+
+    return { success: true, targetUserId: data.targetUserId, isVerified: data.isVerified };
   });
 
 const toggleCourseStatusInput = z.object({

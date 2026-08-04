@@ -39,7 +39,7 @@ export function GoalProgress({
             r={radius}
             fill="none"
             strokeWidth={stroke}
-            className="stroke-surface-strong"
+            className="stroke-slate-200"
           />
           <circle
             cx={size / 2}
@@ -50,11 +50,11 @@ export function GoalProgress({
             strokeLinecap="round"
             strokeDasharray={circumference}
             strokeDashoffset={offset}
-            className="stroke-brand transition-[stroke-dashoffset] duration-700"
+            className="stroke-blue-600 transition-[stroke-dashoffset] duration-700"
           />
         </svg>
         <div className="absolute inset-0 grid place-items-center">
-          <span className="font-display text-2xl text-ink">{pct}%</span>
+          <span className="font-display text-2xl font-bold text-slate-900">{pct}%</span>
         </div>
       </div>
 
@@ -82,11 +82,11 @@ function Metric({
 }) {
   return (
     <div>
-      <div className="flex items-center gap-1.5 text-ink-muted">
-        <Icon className="h-3.5 w-3.5" />
-        <span className="text-[11px] uppercase tracking-widest">{label}</span>
+      <div className="flex items-center gap-1.5 text-slate-500">
+        <Icon className="h-3.5 w-3.5 text-slate-400" />
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{label}</span>
       </div>
-      <p className="mt-1.5 text-lg text-ink">{value}</p>
+      <p className="mt-1.5 text-lg font-bold text-slate-900">{value}</p>
     </div>
   );
 }

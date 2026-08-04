@@ -21,13 +21,17 @@ export const createCourse = createServerFn({ method: "POST" })
     // Check if user has permission to create courses
     const { data: profile } = await supabase
       .from("profiles")
-      .select("role")
+      .select("role, is_verified_instructor")
       .eq("id", userId)
       .maybeSingle();
 
     const role = profile?.role ?? "student";
     if (role !== "instructor" && role !== "admin") {
       throw new Error("Only Instructors and Admins can create official courses.");
+    }
+
+    if (role === "instructor" && !(profile as any)?.is_verified_instructor) {
+      throw new Error("Verification Required: Your educator account is pending admin approval. You cannot create courses until verified.");
     }
 
     // Create course record

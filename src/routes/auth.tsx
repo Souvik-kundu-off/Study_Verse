@@ -47,40 +47,42 @@ function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-slate-50 text-slate-900">
       <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-6">
-        <Link to="/" className="mt-6 flex items-center gap-2 self-start">
-          <div className="grid h-8 w-8 place-items-center rounded-full bg-ink text-background">
-            <GraduationCap className="h-4 w-4" />
+        <Link to="/" className="mt-8 flex items-center gap-2.5 self-start">
+          <div className="grid h-8 w-8 place-items-center rounded-lg bg-blue-600 text-white shadow-sm">
+            <GraduationCap className="h-4.5 w-4.5" />
           </div>
-          <span className="font-display text-xl text-ink">StudyVerse</span>
+          <span className="font-display text-xl font-bold tracking-tight text-slate-900">StudyVerse</span>
         </Link>
 
-        <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center py-16 text-center">
-          <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl border border-border bg-surface-strong shadow-sm mb-6">
-            <BookOpen className="h-8 w-8 text-brand" />
-          </div>
+        <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center py-12">
+          <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm text-center">
+            <div className="mx-auto grid h-14 w-14 place-items-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100 mb-5">
+              <BookOpen className="h-7 w-7" />
+            </div>
 
-          <h1 className="font-display text-4xl text-ink">
-            Your AI Learning OS
-          </h1>
-          <p className="mt-3 text-sm text-ink-muted leading-relaxed">
-            One-click sign in with Google to access your personalized roadmaps, Focus workspace, and AI tutor.
-          </p>
+            <h1 className="font-display text-2xl font-bold text-slate-900">
+              Welcome to StudyVerse
+            </h1>
+            <p className="mt-2 text-sm text-slate-600 leading-relaxed">
+              Sign in with your Google account to access your study roadmaps, AI tutor, and practice focus sessions.
+            </p>
 
-          <div className="mt-8 space-y-4">
-            <button
-              onClick={handleGoogle}
-              disabled={loading}
-              className="inline-flex w-full items-center justify-center gap-3 rounded-2xl border border-border bg-background px-6 py-4 font-medium text-ink shadow-sm transition hover:bg-surface-strong hover:shadow disabled:opacity-50 text-base"
-            >
-              {loading ? (
-                <Loader2 className="h-5 w-5 animate-spin text-ink-muted" />
-              ) : (
-                <GoogleIcon />
-              )}
-              <span>{loading ? "Redirecting to Google..." : "Continue with Google"}</span>
-            </button>
+            <div className="mt-7">
+              <button
+                onClick={handleGoogle}
+                disabled={loading}
+                className="inline-flex w-full items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white px-5 py-3 font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50 hover:text-slate-900 hover:border-slate-400 disabled:opacity-50 text-sm"
+              >
+                {loading ? (
+                  <Loader2 className="h-4.5 w-4.5 animate-spin text-slate-500" />
+                ) : (
+                  <GoogleIcon />
+                )}
+                <span>{loading ? "Redirecting to Google..." : "Continue with Google"}</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
