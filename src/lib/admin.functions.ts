@@ -1,6 +1,40 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
+
+/** Creates a service-role Supabase client that bypasses RLS. Server-only. */
+function getAdminSupabase() {
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || (typeof import.meta !== "undefined" ? import.meta.env?.VITE_SUPABASE_URL : "") || "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+
+  const key = serviceKey || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || (typeof import.meta !== "undefined" ? import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY : "") || "";
+
+  if (!serviceKey) {
+    console.warn("[Admin] SUPABASE_SERVICE_ROLE_KEY not set — falling back to publishable key (RLS still enforced)");
+  }
+
+  // Custom fetch to handle new sb_secret_ / sb_publishable_ key format
+  const customFetch: typeof fetch = (input, init) => {
+    const headers = new Headers(
+      typeof Request !== "undefined" && input instanceof Request ? input.headers : undefined,
+    );
+    if (init?.headers) {
+      new Headers(init.headers).forEach((value, k) => headers.set(k, value));
+    }
+    const isNewKey = key.startsWith("sb_publishable_") || key.startsWith("sb_secret_");
+    if (isNewKey && headers.get("Authorization") === `Bearer ${key}`) {
+      headers.delete("Authorization");
+    }
+    headers.set("apikey", key);
+    return fetch(input, { ...init, headers });
+  };
+
+  return createClient(url, key, {
+    global: { fetch: customFetch },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
 
 async function requireAdminRole(supabase: any, userId: string) {
   const { data: profile } = await supabase
@@ -107,7 +141,10 @@ export const updateUserRole = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     await requireAdminRole(supabase, userId);
 
-    const { error } = await supabase
+    // Use service-role client to bypass RLS (admin verified above)
+    const adminDb = getAdminSupabase();
+
+    const { error } = await adminDb
       .from("profiles")
       .update({ role: data.role })
       .eq("id", data.targetUserId);
@@ -128,7 +165,9 @@ export const toggleCourseStatus = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     await requireAdminRole(supabase, userId);
 
-    const { error } = await supabase
+    const adminDb = getAdminSupabase();
+
+    const { error } = await adminDb
       .from("courses")
       .update({ status: data.status })
       .eq("id", data.courseId);
@@ -192,7 +231,9 @@ export const purgeOrphanedVectorChunks = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     await requireAdminRole(supabase, userId);
 
-    const { error, count } = await (supabase.from as any)("document_chunks")
+    const adminDb = getAdminSupabase();
+
+    const { error, count } = await (adminDb.from as any)("document_chunks")
       .delete({ count: "exact" })
       .is("goal_id", null)
       .is("course_id", null);

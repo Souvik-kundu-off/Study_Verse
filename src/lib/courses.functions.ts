@@ -86,6 +86,7 @@ const updateCourseInput = z.object({
   degreeProgram: z.string().optional(),
   category: z.string().optional(),
   description: z.string().optional(),
+  status: z.enum(["published", "draft", "paused", "archived"]).optional(),
 });
 
 export const updateCourse = createServerFn({ method: "POST" })
@@ -117,6 +118,7 @@ export const updateCourse = createServerFn({ method: "POST" })
       degree_program?: string;
       category?: string;
       description?: string;
+      status?: string;
       updated_at?: string;
     } = {
       updated_at: new Date().toISOString(),
@@ -125,6 +127,7 @@ export const updateCourse = createServerFn({ method: "POST" })
     if (data.degreeProgram) updates.degree_program = data.degreeProgram;
     if (data.category) updates.category = data.category;
     if (data.description) updates.description = data.description;
+    if (data.status) updates.status = data.status;
 
     const { error } = await (supabase.from as any)("courses")
       .update(updates)
@@ -132,6 +135,69 @@ export const updateCourse = createServerFn({ method: "POST" })
 
     if (error) throw new Error(error.message);
     return { success: true };
+  });
+
+const deleteCourseInput = z.object({
+  courseId: z.string().uuid(),
+});
+
+export const deleteCourse = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((input: unknown) => deleteCourseInput.parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+
+    // Check ownership or admin role
+    const { data: course } = await supabase
+      .from("courses")
+      .select("instructor_id")
+      .eq("id", data.courseId)
+      .maybeSingle();
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", userId)
+      .maybeSingle();
+
+    const isAdmin = profile?.role === "admin";
+    if (!course || (course.instructor_id !== userId && !isAdmin)) {
+      throw new Error("Access Denied: You do not own this course and cannot delete it.");
+    }
+
+    // Bypass RLS for verified owner/admin
+    const { createClient } = await import("@supabase/supabase-js");
+    const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    const key = serviceKey || process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || "";
+
+    const customFetch: typeof fetch = (input, init) => {
+      const headers = new Headers(
+        typeof Request !== "undefined" && input instanceof Request ? input.headers : undefined,
+      );
+      if (init?.headers) {
+        new Headers(init.headers).forEach((value, k) => headers.set(k, value));
+      }
+      const isNewKey = key.startsWith("sb_publishable_") || key.startsWith("sb_secret_");
+      if (isNewKey && headers.get("Authorization") === `Bearer ${key}`) {
+        headers.delete("Authorization");
+      }
+      headers.set("apikey", key);
+      return fetch(input, { ...init, headers });
+    };
+
+    const db = createClient(url, key, {
+      global: { fetch: customFetch },
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    const { error } = await db
+      .from("courses")
+      .delete()
+      .eq("id", data.courseId);
+
+    if (error) throw new Error(error.message);
+    return { success: true, courseId: data.courseId };
   });
 
 const enrollInput = z.object({
@@ -407,4 +473,111 @@ export const updateInstructorProfile = createServerFn({ method: "POST" })
 
     if (error) throw new Error(error.message);
     return { success: true };
+  });
+
+const unenrollInput = z.object({
+  courseId: z.string().uuid(),
+});
+
+export const unenrollCourse = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((input: unknown) => unenrollInput.parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+
+    // 1. Get course title to match provisioned goal
+    const { data: course } = await supabase
+      .from("courses")
+      .select("title")
+      .eq("id", data.courseId)
+      .maybeSingle();
+
+    // 2. Delete enrollment record
+    await supabase
+      .from("course_enrollments")
+      .delete()
+      .eq("user_id", userId)
+      .eq("course_id", data.courseId);
+
+    // 3. Delete matching goal track (which cascades to modules, topics, notes, etc.)
+    if (course?.title) {
+      await supabase
+        .from("goals")
+        .delete()
+        .eq("user_id", userId)
+        .eq("title", course.title);
+    }
+
+    // 4. Activate another goal if available
+    const { data: remainingGoal } = await supabase
+      .from("goals")
+      .select("id")
+      .eq("user_id", userId)
+      .limit(1)
+      .maybeSingle();
+
+    if (remainingGoal) {
+      await supabase.from("goals").update({ is_active: true }).eq("id", remainingGoal.id);
+    }
+
+    return { success: true, courseId: data.courseId };
+  });
+
+const deleteTrackInput = z.object({
+  goalId: z.string().uuid(),
+});
+
+export const deleteTrackGoal = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((input: unknown) => deleteTrackInput.parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+
+    // 1. Fetch goal title to check for linked course enrollment
+    const { data: goal } = await supabase
+      .from("goals")
+      .select("title")
+      .eq("id", data.goalId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (!goal) throw new Error("Track goal not found");
+
+    // 2. Check if goal matches an enrolled course and delete enrollment
+    const { data: course } = await supabase
+      .from("courses")
+      .select("id")
+      .eq("title", goal.title)
+      .maybeSingle();
+
+    if (course) {
+      await supabase
+        .from("course_enrollments")
+        .delete()
+        .eq("user_id", userId)
+        .eq("course_id", course.id);
+    }
+
+    // 3. Delete the goal (cascades to modules/topics/notes/quizzes/flashcards)
+    const { error } = await supabase
+      .from("goals")
+      .delete()
+      .eq("id", data.goalId)
+      .eq("user_id", userId);
+
+    if (error) throw new Error(error.message);
+
+    // 4. Activate remaining goal if any
+    const { data: remainingGoal } = await supabase
+      .from("goals")
+      .select("id")
+      .eq("user_id", userId)
+      .limit(1)
+      .maybeSingle();
+
+    if (remainingGoal) {
+      await supabase.from("goals").update({ is_active: true }).eq("id", remainingGoal.id);
+    }
+
+    return { success: true, goalId: data.goalId };
   });

@@ -11,6 +11,7 @@ import {
   updateSystemSettings,
   purgeOrphanedVectorChunks
 } from "@/lib/admin.functions";
+import { deleteCourse } from "@/lib/courses.functions";
 import { supabase } from "@/integrations/supabase/client";
 import {
   ShieldAlert,
@@ -120,6 +121,17 @@ function AdminConsolePage() {
       toast.success("Course status updated");
     },
     onError: (err: Error) => toast.error(err.message),
+  });
+
+  // Delete Course Mutation (Admin override)
+  const deleteCourseMutation = useMutation({
+    mutationFn: (courseId: string) => deleteCourse({ data: { courseId } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["adminCourses"] });
+      queryClient.invalidateQueries({ queryKey: ["adminTelemetry"] });
+      toast.success("Course deleted successfully by admin!");
+    },
+    onError: (err: Error) => toast.error(err.message ?? "Failed to delete course"),
   });
 
   // Settings Update Mutation
@@ -475,6 +487,18 @@ function AdminConsolePage() {
                             Archive
                           </button>
                         )}
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Are you sure you want to delete course "${c.title}"? This cannot be undone.`)) {
+                              deleteCourseMutation.mutate(c.id);
+                            }
+                          }}
+                          disabled={deleteCourseMutation.isPending}
+                          className="rounded-lg border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/40 px-2.5 py-1 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete</span>
+                        </button>
                       </td>
                     </tr>
                   ))}

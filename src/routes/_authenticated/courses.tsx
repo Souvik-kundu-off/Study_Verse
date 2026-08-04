@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getCoursesCatalog, enrollInCourse, createCourse } from "@/lib/courses.functions";
+import { getCoursesCatalog, enrollInCourse, createCourse, unenrollCourse } from "@/lib/courses.functions";
 import { ingestDocument } from "@/lib/rag.server";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -25,7 +25,8 @@ import {
   BookCheck,
   Check,
   HelpCircle,
-  Clock
+  Clock,
+  Trash2
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -98,6 +99,19 @@ function CoursesCatalogPage() {
     },
     onError: (err: Error) => {
       toast.error(err.message ?? "Enrollment failed");
+    },
+  });
+
+  const unenrollMutation = useMutation({
+    mutationFn: (courseId: string) => unenrollCourse({ data: { courseId } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["coursesCatalog"] });
+      queryClient.invalidateQueries({ queryKey: ["all-goals"] });
+      setSelectedCourseOverview(null);
+      toast.success("Unenrolled from course. Track removed from your workspace.");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message ?? "Unenrollment failed");
     },
   });
 
@@ -423,19 +437,32 @@ function CoursesCatalogPage() {
                 Close
               </button>
 
-              {/* Enroll Button appears ONLY inside the details modal, and ONLY for Students */}
+              {/* Enroll / Unenroll Buttons appear ONLY inside details modal for Students */}
               {!isInstructorOrAdmin && (
                 selectedCourseOverview.isEnrolled ? (
-                  <button
-                    onClick={() => {
-                      enrollMutation.mutate(selectedCourseOverview.id);
-                      setSelectedCourseOverview(null);
-                    }}
-                    disabled={enrollMutation.isPending}
-                    className="rounded-full bg-emerald-600 px-5 py-2 text-xs font-semibold text-white hover:bg-emerald-500 transition shadow-sm flex items-center gap-1.5"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Enrolled — Continue Learning
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`Are you sure you want to unenroll from "${selectedCourseOverview.title}"? Your study track for this course will be removed.`)) {
+                          unenrollMutation.mutate(selectedCourseOverview.id);
+                        }
+                      }}
+                      disabled={unenrollMutation.isPending}
+                      className="rounded-full border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/40 px-3.5 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition flex items-center gap-1.5"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Unenroll</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        navigate({ to: "/dashboard" });
+                        setSelectedCourseOverview(null);
+                      }}
+                      className="rounded-full bg-emerald-600 px-5 py-2 text-xs font-semibold text-white hover:bg-emerald-500 transition shadow-sm flex items-center gap-1.5"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Enrolled — Continue Learning
+                    </button>
+                  </div>
                 ) : (
                   <button
                     onClick={() => {

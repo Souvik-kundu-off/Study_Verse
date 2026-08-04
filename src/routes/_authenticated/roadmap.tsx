@@ -1,9 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useState, useEffect } from "react";
 import { CreateTrackModal } from "@/components/study/CreateTrackModal";
-import { CheckCircle2, Circle, RotateCcw, Target, Plus, BookMarked, Sunrise, Sun, Sunset, Moon } from "lucide-react";
+import { deleteTrackGoal } from "@/lib/courses.functions";
+import { CheckCircle2, Circle, RotateCcw, Target, Plus, BookMarked, Sunrise, Sun, Sunset, Moon, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/roadmap")({
   head: () => ({
@@ -39,7 +41,21 @@ type Goal = {
 function RoadmapPage() {
   const { user } = Route.useRouteContext();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
+
+  const deleteTrackMutation = useMutation({
+    mutationFn: (goalId: string) => deleteTrackGoal({ data: { goalId } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["all-goals"] });
+      queryClient.invalidateQueries({ queryKey: ["coursesCatalog"] });
+      setSelectedGoalId(null);
+      toast.success("Subject track deleted successfully!");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message ?? "Failed to delete track");
+    },
+  });
 
   // Redirect Admins to /admin
   const { data: profile } = useQuery({
@@ -153,12 +169,28 @@ function RoadmapPage() {
             <p className="mt-3 max-w-2xl text-ink-muted">{activeGoal.description}</p>
           )}
         </div>
-        <button
-          onClick={() => setCreateModalOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-full border border-border px-3.5 py-1.5 text-xs text-ink-muted transition hover:text-ink"
-        >
-          <Plus className="h-3.5 w-3.5" /> Add another subject
-        </button>
+        <div className="flex items-center gap-2">
+          {activeGoal && (
+            <button
+              onClick={() => {
+                if (window.confirm(`Are you sure you want to delete subject track "${activeGoal.title}"?`)) {
+                  deleteTrackMutation.mutate(activeGoal.id);
+                }
+              }}
+              disabled={deleteTrackMutation.isPending}
+              className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/40 px-3.5 py-1.5 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition"
+              title="Delete Subject Track"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete Track
+            </button>
+          )}
+          <button
+            onClick={() => setCreateModalOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-border px-3.5 py-1.5 text-xs text-ink-muted transition hover:text-ink"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add another subject
+          </button>
+        </div>
       </div>
 
       {!activeGoal && (
