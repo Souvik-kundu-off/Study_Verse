@@ -733,11 +733,11 @@ function AdminConsolePage() {
                 <div>
                   <label className="block text-xs font-semibold text-ink mb-1.5">Master AI Model Engine</label>
                   <select
-                    value={settings?.aiModel ?? "llama-3.3-70b"}
+                    value={settings?.aiModel ?? "llama-4-scout"}
                     onChange={(e) => settingsMutation.mutate({ aiModel: e.target.value })}
                     className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-xs text-ink font-medium focus:outline-none focus:border-ink"
                   >
-                    <option value="llama-3.3-70b">Groq / Llama 3.3 70B (Sub-second Speed)</option>
+                    <option value="llama-4-scout">Groq / Llama 4 Scout (Sub-second Speed)</option>
                     <option value="gemini-1.5-pro">Google Gemini 1.5 Pro (Multimodal Depth)</option>
                     <option value="gpt-4o">OpenAI GPT-4o (High-Precision Reasoning)</option>
                   </select>

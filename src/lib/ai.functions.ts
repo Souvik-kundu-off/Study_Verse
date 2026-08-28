@@ -91,7 +91,7 @@ async function callGroq(messages: Array<{ role: string; content: string }>, apiK
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
+      model: "meta-llama/llama-4-scout-17b-16e-instruct",
       messages,
       temperature: 0.7,
       max_tokens: 4096,
@@ -180,7 +180,7 @@ async function callAI(messages: Array<{ role: string; content: string }>): Promi
   const geminiKey = process.env.GEMINI_API_KEY;
   const lovableKey = process.env.LOVABLE_API_KEY;
 
-  // 1. Groq — free tier: 30 req/min, 14,400 req/day, no credit card needed
+  // 1. Groq — free tier: 30 req/min, 1,000 req/day, 30K TPM (Llama 4 Scout)
   if (groqKey) {
     return callGroq(messages, groqKey);
   }

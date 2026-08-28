@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS public.system_settings (
 -- Seed Default Admin Configurations
 INSERT INTO public.system_settings (key, value)
 VALUES
-  ('ai_model', 'llama-3.3-70b'),
+  ('ai_model', 'llama-4-scout'),
   ('match_threshold', '0.30'),
   ('match_count', '4'),
   ('maintenance_mode', 'false'),
