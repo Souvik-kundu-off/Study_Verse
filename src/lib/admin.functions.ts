@@ -226,7 +226,7 @@ export const getSystemSettings = createServerFn({ method: "GET" })
     });
 
     return {
-      aiModel: settingsMap["ai_model"] ?? "llama-4-scout",
+      aiModel: settingsMap["ai_model"] ?? "qwen-3.8-27b",
       matchThreshold: parseFloat(settingsMap["match_threshold"] ?? "0.30"),
       matchCount: parseInt(settingsMap["match_count"] ?? "4", 10),
       maintenanceMode: settingsMap["maintenance_mode"] === "true",
