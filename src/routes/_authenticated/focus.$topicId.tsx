@@ -13,7 +13,7 @@ import {
 import { FlashcardDeck } from "@/components/study/FlashcardDeck";
 import { QuizModal } from "@/components/study/QuizModal";
 import { CodingPlayground } from "@/components/tools/CodingPlayground";
-import { FormattedText } from "@/components/ui/FormattedText";
+import { FormattedText, MarkdownInline } from "@/components/ui/FormattedText";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ingestDocument } from "@/lib/rag.server";
 
@@ -155,45 +155,198 @@ function FocusWorkspace() {
     }
   }, [noteRow]);
 
-  // Smart Educational YouTube Video Query Generator
+  // ── YouTube Smart Video Suggestion ───────────────────────────────────────
+  type YtLang = "en" | "hi" | "any";
+  type YtCandidate = { videoId: string; title: string; channelTitle: string };
+
   const [ytVideo, setYtVideo] = useState<{ videoId: string; title: string } | null>(null);
   const [ytLoading, setYtLoading] = useState(false);
+  const [ytSkippedIds, setYtSkippedIds] = useState<string[]>([]);
+  const [ytCandidates, setYtCandidates] = useState<YtCandidate[]>([]);
+  const [ytLang, setYtLang] = useState<YtLang>("en");
+  const [ytNoMore, setYtNoMore] = useState(false);
+  const [tutorPrompt, setTutorPrompt] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!topic?.title) return;
-    const apiKey = import.meta.env.VITE_YOUTUBE_API_KEY;
-    if (!apiKey) return;
-
-    setYtLoading(true);
-
-    // Build context-aware educational search query (combines Subject Track + Topic + Educational filters)
-    const goalTitle = (topic as any)?.goals?.title ?? "";
-    let cleanQuery = "";
-    if (goalTitle && !topic.title.toLowerCase().includes(goalTitle.toLowerCase())) {
-      cleanQuery = `${goalTitle} ${topic.title}`;
-    } else {
-      cleanQuery = topic.title;
+  const handleAskConcept = (concept: string) => {
+    const question = `Can you explain the key concept "${concept}" in simple, intuitive terms with a clear real-world example?`;
+    setTutorPrompt(question);
+    setTab("tutor");
+    if (paneMode === "video-only") {
+      setPaneMode("split");
     }
+    toast.info(`Asking Gemini Tutor about "${concept}"...`);
+  };
 
-    // Replace ambiguous words (like "exercise" or "workout") with coding/academic terms
-    cleanQuery = cleanQuery
-      .replace(/\bworkout\b/gi, "problems solution")
-      .replace(/\bexercise\b/gi, "practice problems")
-      .replace(/\bexercises\b/gi, "practice problems");
+  /**
+   * Score a YouTube candidate for educational relevance.
+   * Higher = better match. Negative = likely wrong language or off-topic.
+   */
+  const scoreCandidate = useCallback(
+    (c: YtCandidate, topicKeywords: string[], lang: YtLang): number => {
+      let score = 0;
+      const titleLower = c.title.toLowerCase();
+      const channelLower = c.channelTitle.toLowerCase();
 
-    const query = `${cleanQuery} lecture tutorial explanation`;
+      // +3 for each topic keyword found in title
+      for (const kw of topicKeywords) {
+        if (titleLower.includes(kw)) score += 3;
+      }
 
-    // Fetch using videoCategoryId=27 (Education Category) in YouTube API v3
-    fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=1&q=${encodeURIComponent(query)}&type=video&videoCategoryId=27&key=${apiKey}`)
-      .then((r) => r.json())
-      .then((data) => {
-        const item = data.items?.[0];
-        if (item?.id?.videoId) {
-          setYtVideo({ videoId: item.id.videoId, title: item.snippet?.title ?? topic.title });
+      // +2 educational channel signals
+      const eduChannelSignals = ["tutorial", "academy", "university", "edu", "lecture", "course", "learn", "institute", "cs", "mit", "nptel", "free"];
+      for (const s of eduChannelSignals) {
+        if (channelLower.includes(s)) { score += 2; break; }
+      }
+
+      // −5 for off-topic interview / podcast / non-tutorial patterns
+      const offTopicPatterns = [
+        "mock interview", "system design interview", "google employee", "amazon employee",
+        "meta employee", "microsoft employee", "ftx", "podcast", "vlog", "unboxing",
+        "salary", "career advice", "how i got", "my journey", "day in the life",
+        "coding interview at", "got hired", "rejected by",
+      ];
+      for (const p of offTopicPatterns) {
+        if (titleLower.includes(p)) { score -= 5; break; }
+      }
+
+      // Language penalty / bonus
+      const foreignLangSignals = [
+        "tamil", "telugu", "malayalam", "kannada", "bangla", "bengali",
+        "marathi", "punjabi", "gujarati", "urdu", "|| tamil", "|| telugu",
+        "in tamil", "in telugu", "in malayalam",
+      ];
+      const hindiSignals = ["hindi", "in hindi", "हिंदी", "|| hindi"];
+
+      if (lang === "en") {
+        // Penalize foreign languages (we want English)
+        for (const s of foreignLangSignals) {
+          if (titleLower.includes(s)) { score -= 8; break; }
         }
-      })
-      .catch(() => {})
-      .finally(() => setYtLoading(false));
+        for (const s of hindiSignals) {
+          if (titleLower.includes(s)) { score -= 6; break; }
+        }
+      } else if (lang === "hi") {
+        // Prefer Hindi
+        for (const s of hindiSignals) {
+          if (titleLower.includes(s)) { score += 4; break; }
+        }
+        // Penalize other regional languages
+        for (const s of foreignLangSignals) {
+          if (titleLower.includes(s)) { score -= 8; break; }
+        }
+      }
+      // lang === "any" → no language scoring
+
+      return score;
+    },
+    []
+  );
+
+  /**
+   * Fetch candidates from YouTube and pick the best non-skipped one.
+   * Pass skipIds to exclude already-seen videos.
+   */
+  const fetchYtVideo = useCallback(
+    async (skipIds: string[], lang: YtLang, existingCandidates?: YtCandidate[]) => {
+      if (!topic?.title) return;
+      const apiKey = import.meta.env.VITE_YOUTUBE_API_KEY;
+      if (!apiKey) return;
+
+      setYtLoading(true);
+      setYtNoMore(false);
+
+      try {
+        // Build the topic keywords list for scoring
+        const goalTitle = (topic as any)?.goals?.title ?? "";
+        let cleanBase = "";
+        if (goalTitle && !topic.title.toLowerCase().includes(goalTitle.toLowerCase())) {
+          cleanBase = `${goalTitle} ${topic.title}`;
+        } else {
+          cleanBase = topic.title;
+        }
+        cleanBase = cleanBase
+          .replace(/\bworkout\b/gi, "problems solution")
+          .replace(/\bexercise\b/gi, "practice problems")
+          .replace(/\bexercises\b/gi, "practice problems");
+
+        const topicKeywords = cleanBase
+          .toLowerCase()
+          .split(/\s+/)
+          .filter((w) => w.length > 3);
+
+        let candidates: YtCandidate[] = existingCandidates ?? [];
+
+        // If we have exhausted existing candidates, fetch a fresh batch
+        if (candidates.filter((c) => !skipIds.includes(c.videoId)).length === 0) {
+          const langParam = lang !== "any" ? `&relevanceLanguage=${lang}` : "";
+          const query = `${cleanBase} explained tutorial`;
+          const url =
+            `https://www.googleapis.com/youtube/v3/search?part=snippet` +
+            `&maxResults=8&q=${encodeURIComponent(query)}` +
+            `&type=video&videoCategoryId=27` +
+            `&videoEmbeddable=true&videoDuration=medium` +
+            langParam +
+            `&key=${apiKey}`;
+
+          const res = await fetch(url);
+          const data = await res.json();
+
+          const fresh: YtCandidate[] = (data.items ?? []).map((item: any) => ({
+            videoId: item.id?.videoId ?? "",
+            title: item.snippet?.title ?? topic.title,
+            channelTitle: item.snippet?.channelTitle ?? "",
+          })).filter((c: YtCandidate) => c.videoId);
+
+          candidates = fresh;
+          setYtCandidates(fresh);
+        }
+
+        // Filter out skipped, score the rest, pick best
+        const available = candidates.filter((c) => !skipIds.includes(c.videoId));
+        if (available.length === 0) {
+          setYtNoMore(true);
+          setYtLoading(false);
+          return;
+        }
+
+        const scored = available
+          .map((c) => ({ ...c, score: scoreCandidate(c, topicKeywords, lang) }))
+          .sort((a, b) => b.score - a.score);
+
+        const best = scored[0];
+        setYtVideo({ videoId: best.videoId, title: best.title });
+      } catch {
+        /* silently fail */
+      } finally {
+        setYtLoading(false);
+      }
+    },
+    [topic, scoreCandidate]
+  );
+
+  /** Called when user clicks "Suggest another" */
+  const handleSuggestAnother = () => {
+    if (!ytVideo) return;
+    const newSkipped = [...ytSkippedIds, ytVideo.videoId];
+    setYtSkippedIds(newSkipped);
+    setYtVideo(null);
+    toast.info("Finding a better match…");
+    fetchYtVideo(newSkipped, ytLang, ytCandidates);
+  };
+
+  /** Refetch when language preference changes */
+  const handleLangChange = (lang: YtLang) => {
+    setYtLang(lang);
+    setYtSkippedIds([]);
+    setYtCandidates([]);
+    setYtVideo(null);
+    fetchYtVideo([], lang);
+  };
+
+  // Initial fetch on topic load
+  useEffect(() => {
+    fetchYtVideo([], ytLang);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topic?.title, (topic as any)?.goals?.title]);
 
   // Auto-generate AI Lesson Notes on initial load if none exist yet
@@ -477,42 +630,76 @@ function FocusWorkspace() {
                   <span>{targetMinutes} mins</span>
                 </div>
                 <h2 className="mt-2 font-display text-3xl md:text-4xl text-slate-900 font-extrabold">{topic?.title}</h2>
-                <p className="mt-2 text-base text-slate-700 leading-relaxed font-normal">{topic?.description}</p>
+                <p className="mt-2 text-base text-slate-700 leading-relaxed font-normal"><MarkdownInline text={topic?.description} /></p>
               </div>
 
               {/* YouTube Video Section with Skeleton Loading */}
               {ytLoading && (
                 <div className="space-y-2">
                   <Skeleton className="aspect-video w-full rounded-2xl" />
-                  <p className="text-center text-xs font-medium text-slate-500">Finding best video tutorial…</p>
+                  <p className="text-center text-xs font-medium text-slate-500 animate-pulse">Finding the best video match…</p>
                 </div>
               )}
 
               {!ytLoading && ytVideo && (
-                <div className="rounded-2xl border border-slate-200 overflow-hidden bg-black shadow-xs">
-                  <div className="flex items-center justify-between bg-slate-50 px-4 py-2 text-xs border-b border-slate-200">
-                    <span className="inline-flex items-center gap-1.5 font-semibold text-slate-800">
+                <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                  {/* Header bar */}
+                  <div className="flex items-center justify-between bg-slate-50 px-3 py-2 border-b border-slate-200 gap-2 flex-wrap">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-800">
                       <Video className="h-3.5 w-3.5 text-red-500" /> YouTube Tutorial
                     </span>
-                    <div className="flex items-center gap-3">
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {/* Language preference selector */}
+                      <select
+                        id="yt-lang-select"
+                        value={ytLang}
+                        onChange={(e) => handleLangChange(e.target.value as "en" | "hi" | "any")}
+                        className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-400 cursor-pointer"
+                        title="Preferred video language"
+                      >
+                        <option value="en">🇬🇧 English</option>
+                        <option value="hi">🇮🇳 Hindi</option>
+                        <option value="any">🌐 Any language</option>
+                      </select>
+
+                      {/* Suggest another */}
+                      <button
+                        id="yt-suggest-another-btn"
+                        onClick={handleSuggestAnother}
+                        title="This video doesn't look right? Get another suggestion"
+                        className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition"
+                      >
+                        <RefreshCw className="h-3 w-3" /> Suggest another
+                      </button>
+
                       <button
                         onClick={() => setShowVideo(!showVideo)}
-                        className="text-slate-600 font-medium hover:text-slate-900 underline"
+                        className="text-[11px] text-slate-500 font-medium hover:text-slate-900 underline"
                       >
-                        {showVideo ? "Hide Video" : "Show Video"}
+                        {showVideo ? "Hide" : "Show"}
                       </button>
+
                       <a
                         href={`https://www.youtube.com/watch?v=${ytVideo.videoId}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-slate-600 font-medium hover:text-slate-900"
+                        className="inline-flex items-center gap-1 text-[11px] text-slate-500 font-medium hover:text-slate-900"
                       >
-                        Watch on YouTube <ExternalLink className="h-3 w-3" />
+                        <ExternalLink className="h-3 w-3" /> Open
                       </a>
                     </div>
                   </div>
+
+                  {/* Video title preview */}
+                  <div className="bg-slate-50 px-3 py-1.5 border-b border-slate-100">
+                    <p className="text-[11px] text-slate-600 leading-snug line-clamp-1" title={ytVideo.title}>
+                      {ytVideo.title}
+                    </p>
+                  </div>
+
                   {showVideo && (
-                    <div className="aspect-video w-full">
+                    <div className="aspect-video w-full bg-black">
                       <iframe
                         src={`https://www.youtube-nocookie.com/embed/${ytVideo.videoId}?autoplay=0`}
                         title={ytVideo.title}
@@ -522,6 +709,21 @@ function FocusWorkspace() {
                       />
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* No more suggestions fallback */}
+              {!ytLoading && ytNoMore && (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center space-y-2">
+                  <p className="text-xs font-medium text-slate-500">No more video suggestions available.</p>
+                  <a
+                    href={`https://www.youtube.com/results?search_query=${encodeURIComponent((topic?.title ?? "") + " tutorial")}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-xs text-blue-600 font-semibold hover:underline"
+                  >
+                    <Video className="h-3 w-3" /> Search YouTube manually <ExternalLink className="h-3 w-3" />
+                  </a>
                 </div>
               )}
 
@@ -570,16 +772,24 @@ function FocusWorkspace() {
 
             {/* Key Concepts */}
             {concepts.length > 0 && (
-              <div>
-                <h3 className="text-xs uppercase tracking-widest text-slate-600 font-bold">Key Concepts to Master</h3>
-                <div className="mt-3 flex flex-wrap gap-2">
+              <div className="pt-2">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-xs uppercase tracking-widest text-slate-600 font-bold flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-blue-600" /> Key Concepts to Master
+                  </h3>
+                  <span className="text-[11px] text-blue-600 font-medium hidden sm:inline">Click concept to ask Gemini Tutor ✨</span>
+                </div>
+                <div className="flex flex-wrap gap-2.5">
                   {concepts.map((c) => (
-                    <span
+                    <button
                       key={c}
-                      className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-800"
+                      onClick={() => handleAskConcept(c)}
+                      className="group inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50/70 hover:bg-blue-600 hover:text-white px-3.5 py-1.5 text-xs font-semibold text-blue-900 transition-all shadow-2xs hover:shadow-sm cursor-pointer hover:scale-102 active:scale-98"
+                      title={`Click to ask Gemini Tutor to explain ${c}`}
                     >
-                      🔑 {c}
-                    </span>
+                      <span className="group-hover:translate-x-0.5 transition-transform">🔑 {c}</span>
+                      <span className="text-[10px] opacity-60 group-hover:opacity-100 font-mono">Ask Tutor →</span>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -627,7 +837,7 @@ function FocusWorkspace() {
             </div>
 
             {/* Tab 1: AI Tutor */}
-            {tab === "tutor" && <TutorPanel topicId={topicId} />}
+            {tab === "tutor" && <TutorPanel topicId={topicId} externalPrompt={tutorPrompt} />}
 
             {/* Tab 2: Personal Student Notes */}
             {tab === "notes" && (
@@ -849,21 +1059,45 @@ function TabBtn({
 
 type Msg = { role: "user" | "assistant"; content: string };
 
-function TutorPanel({ topicId }: { topicId: string }) {
+function TutorPanel({
+  topicId,
+  externalPrompt,
+}: {
+  topicId: string;
+  externalPrompt?: string | null;
+}) {
   const ask = useServerFn(askTutor);
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: "assistant",
-      content: "Hey — I'm your tutor for this topic. Ask me any question, or say 'explain this simply' and I'll break it down.",
+      content: "Hey — I'm your Gemini AI tutor for this topic. Ask me any question, or click any concept to break it down.",
     },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const handledPromptRef = useRef<string | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages]);
+  }, [messages, loading]);
+
+  useEffect(() => {
+    if (externalPrompt && externalPrompt !== handledPromptRef.current) {
+      handledPromptRef.current = externalPrompt;
+      setMessages((m) => [...m, { role: "user", content: externalPrompt }]);
+      setLoading(true);
+      ask({ data: { topicId, question: externalPrompt } })
+        .then((res) => {
+          setMessages((m) => [...m, { role: "assistant", content: res.answer }]);
+        })
+        .catch((e) => {
+          const msg = e instanceof Error ? e.message : "Tutor unavailable";
+          setMessages((m) => [...m, { role: "assistant", content: `⚠️ ${msg}` }]);
+        })
+        .finally(() => setLoading(false));
+    }
+  }, [externalPrompt, topicId, ask]);
 
   async function send() {
     const question = input.trim();
