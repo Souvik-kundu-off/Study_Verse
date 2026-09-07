@@ -89,8 +89,8 @@ export function ProfileSettingsModal({
   useEffect(() => {
     if (profile) {
       setFullName(profile.full_name ?? "");
-      setTargetExam(profile.target_exam ?? "");
-      setLearningStyle(profile.preferred_learning_style ?? "Mixed");
+      setTargetExam((profile as any).target_exam ?? "");
+      setLearningStyle((profile as any).preferred_learning_style ?? "Mixed");
       setInstitutionName((profile as any).institution_name ?? "");
       setAcademicTitle((profile as any).academic_title ?? "");
       setSpecialization((profile as any).specialization ?? "");

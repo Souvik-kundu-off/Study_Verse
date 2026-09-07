@@ -695,7 +695,7 @@ function FocusWorkspace() {
               <FlashcardDeck
                 cards={(cardsData as any) ?? []}
                 loading={generatingCards}
-                onGenerate={async () => {
+                onGenerateMore={async () => {
                   setGeneratingCards(true);
                   await genCards({ data: { topicId } });
                   refetchCards();

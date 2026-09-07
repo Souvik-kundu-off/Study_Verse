@@ -33,6 +33,7 @@ import {
   Building2,
   Award,
   ShieldCheck,
+  ShieldAlert,
   UserCheck,
   Pause,
   Play,
