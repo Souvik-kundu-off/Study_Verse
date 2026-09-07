@@ -83,28 +83,58 @@ type RoadmapAI = {
   }>;
 };
 
-async function callGroq(messages: Array<{ role: string; content: string }>, apiKey: string): Promise<string> {
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "qwen/qwen3.8-27b",
-      messages,
-      temperature: 0.7,
-      max_tokens: 4096,
-    }),
-  });
+async function callGroq(
+  messages: Array<{ role: string; content: string }>,
+  apiKey: string,
+  options?: { maxTokens?: number; jsonMode?: boolean }
+): Promise<string> {
+  const candidates = [
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "qwen/qwen3.8-27b",
+    "qwen/qwen3.6-27b",
+  ];
 
-  if (!res.ok) {
-    const body = await res.text();
-    if (res.status === 429) throw new Error("Groq rate limit reached. Please wait a moment and try again.");
-    throw new Error(`Groq API error ${res.status}: ${body.slice(0, 200)}`);
+  let lastErr = "";
+  for (const model of candidates) {
+    try {
+      const isQwen = model.startsWith("qwen/");
+      const maxTokens = isQwen ? Math.min(options?.maxTokens ?? 2048, 2048) : (options?.maxTokens ?? 6144);
+
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.5,
+          max_tokens: maxTokens,
+          ...(options?.jsonMode ? { response_format: { type: "json_object" } } : {}),
+        }),
+      });
+
+      if (res.ok) {
+        const payload = await res.json();
+        return payload.choices?.[0]?.message?.content ?? "";
+      }
+
+      const body = await res.text();
+      lastErr = `[${model}] ${res.status}: ${body.slice(0, 150)}`;
+      console.warn(`Groq model ${model} returned ${res.status}, checking next candidate...`);
+      // If 429 (OTPM rate limit) or 503 or 404, try next Groq candidate model
+      if (res.status === 429 || res.status === 503 || res.status === 404) {
+        continue;
+      }
+    } catch (e) {
+      lastErr = `[${model}] ${e instanceof Error ? e.message : String(e)}`;
+      continue;
+    }
   }
-  const payload = await res.json();
-  return payload.choices?.[0]?.message?.content ?? "";
+
+  throw new Error(`Groq failed on all models: ${lastErr}`);
 }
 
 async function callGemini(messages: Array<{ role: string; content: string }>, apiKey: string): Promise<string> {
@@ -122,95 +152,178 @@ async function callGemini(messages: Array<{ role: string; content: string }>, ap
   }
 
   const candidates = [
-    "v1beta/models/gemini-3.6-flash:generateContent",
-    "v1beta/models/gemini-3.8-flash:generateContent",
     "v1beta/models/gemini-3.5-flash:generateContent",
     "v1beta/models/gemini-flash-latest:generateContent",
+    "v1beta/models/gemini-flash-lite-latest:generateContent",
+    "v1beta/models/gemini-3.5-flash-lite:generateContent",
+    "v1beta/models/gemini-3.6-flash:generateContent",
   ];
 
   let lastErr = "";
   for (const path of candidates) {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/${path}?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(reqBody),
-      }
-    );
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/${path}?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(reqBody),
+        }
+      );
 
-    if (res.ok) {
-      const data = await res.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+      if (res.ok) {
+        const data = await res.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+      }
+
+      const errText = await res.text();
+      lastErr = `[${path}] ${res.status}: ${errText.slice(0, 150)}`;
+      console.warn(`Gemini model ${path} returned ${res.status}, checking next candidate...`);
+
+      // If 503 (demand spike), 429, or 404, try next candidate
+      if (res.status === 503 || res.status === 429 || res.status === 404) {
+        continue;
+      }
+    } catch (e) {
+      lastErr = `[${path}] ${e instanceof Error ? e.message : String(e)}`;
+      continue;
+    }
+  }
+
+  throw new Error(`Gemini: all model candidates failed. ${lastErr}`);
+}
+
+/**
+ * Robust JSON parser that extracts JSON blocks and automatically
+ * repairs truncated strings, arrays, and objects caused by token limits.
+ */
+function safeJsonParse<T = unknown>(raw: string): T {
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+  const jsonStart = cleaned.indexOf("{");
+  const arrayStart = cleaned.indexOf("[");
+  let startIdx = 0;
+  if (jsonStart !== -1 && (arrayStart === -1 || jsonStart < arrayStart)) {
+    startIdx = jsonStart;
+  } else if (arrayStart !== -1) {
+    startIdx = arrayStart;
+  }
+
+  const jsonStr = cleaned.slice(startIdx);
+  try {
+    return JSON.parse(jsonStr) as T;
+  } catch {
+    // Attempt automated structural closure of truncated JSON
+    let inString = false;
+    let escaped = false;
+    const stack: string[] = [];
+    let buffer = jsonStr.trim();
+
+    for (let i = 0; i < buffer.length; i++) {
+      const c = buffer[i];
+      if (c === "\\" && inString) {
+        escaped = !escaped;
+        continue;
+      }
+      if (c === '"' && !escaped) {
+        inString = !inString;
+      } else if (!inString) {
+        if (c === "{" || c === "[") stack.push(c);
+        else if (c === "}" && stack[stack.length - 1] === "{") stack.pop();
+        else if (c === "]" && stack[stack.length - 1] === "[") stack.pop();
+      }
+      escaped = false;
     }
 
-    const errText = await res.text();
-    if (res.status === 429) throw new Error("Gemini rate limit reached. Please wait 30 seconds.");
-    if (res.status !== 404) throw new Error(`Gemini API error ${res.status}: ${errText.slice(0, 200)}`);
-    lastErr = `404 for ${path}`;
-  }
+    if (inString) buffer += '"';
+    buffer = buffer.replace(/,\s*$/, "");
+    buffer = buffer.replace(/:\s*$/, ': ""');
 
-  throw new Error(`Gemini: no available model found. ${lastErr}`);
+    while (stack.length > 0) {
+      const open = stack.pop();
+      buffer += open === "{" ? "}" : "]";
+    }
+
+    return JSON.parse(buffer) as T;
+  }
 }
 
-async function callLovableGateway(messages: Array<{ role: string; content: string }>, apiKey: string): Promise<string> {
-  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
-      messages,
-    }),
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    if (res.status === 429) throw new Error("AI rate limit — please try again in a moment.");
-    if (res.status === 402) throw new Error("AI credits exhausted. Please add credits.");
-    throw new Error(`AI request failed: ${res.status} ${body.slice(0, 200)}`);
-  }
-  const payload = await res.json();
-  return payload.choices?.[0]?.message?.content ?? "";
-}
-
-async function callAI(messages: Array<{ role: string; content: string }>): Promise<string> {
+/**
+ * Universal AI Caller for roadmaps, quizzes, flashcards, notes, etc.
+ * Primary: Groq
+ * Fallback: Google Gemini
+ */
+async function callAI(
+  messages: Array<{ role: string; content: string }>,
+  options?: { maxTokens?: number; jsonMode?: boolean }
+): Promise<string> {
   const groqKey = process.env.GROQ_API_KEY;
   const geminiKey = process.env.GEMINI_API_KEY;
-  const lovableKey = process.env.LOVABLE_API_KEY;
 
-  // 1. Groq — free tier, Qwen 3.8 27B
+  const errors: string[] = [];
+
+  // 1. Primary: Groq
   if (groqKey) {
-    return callGroq(messages, groqKey);
+    try {
+      return await callGroq(messages, groqKey, options);
+    } catch (err) {
+      console.warn("Groq failed in callAI, falling back to Gemini:", err);
+      errors.push(`Groq: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
-  // 2. Gemini — Google AI Studio key
+  // 2. Fallback: Google Gemini
   if (geminiKey) {
-    return callGemini(messages, geminiKey);
+    try {
+      return await callGemini(messages, geminiKey);
+    } catch (err) {
+      console.warn("Gemini failed in callAI fallback:", err);
+      errors.push(`Gemini: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
-  // 3. Lovable gateway fallback
-  if (lovableKey) {
-    return callLovableGateway(messages, lovableKey);
+  if (errors.length > 0) {
+    throw new Error(`AI generation failed: ${errors.join(" | ")}`);
   }
 
-  throw new Error("No AI key configured. Add GROQ_API_KEY to your .env file (free at console.groq.com).");
+  throw new Error("No AI key configured. Add GROQ_API_KEY or GEMINI_API_KEY to your .env file.");
 }
 
-/** Dedicated AI caller restricted exclusively to Google Gemini */
-async function callGeminiOnly(messages: Array<{ role: string; content: string }>): Promise<string> {
+/**
+ * Dedicated Tutor Caller.
+ * Primary: Google Gemini
+ * Fallback: Groq
+ */
+async function callTutor(messages: Array<{ role: string; content: string }>): Promise<string> {
   const geminiKey = process.env.GEMINI_API_KEY;
+  const groqKey = process.env.GROQ_API_KEY;
+
+  const errors: string[] = [];
+
+  // 1. Primary for Tutor: Google Gemini
   if (geminiKey) {
-    return callGemini(messages, geminiKey);
+    try {
+      return await callGemini(messages, geminiKey);
+    } catch (err) {
+      console.warn("Gemini tutor call failed, falling back to Groq:", err);
+      errors.push(`Gemini: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
-  const lovableKey = process.env.LOVABLE_API_KEY;
-  if (lovableKey) {
-    return callLovableGateway(messages, lovableKey);
+  // 2. Fallback for Tutor: Groq
+  if (groqKey) {
+    try {
+      return await callGroq(messages, groqKey);
+    } catch (err) {
+      console.warn("Groq tutor fallback failed:", err);
+      errors.push(`Groq: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
-  throw new Error("No Gemini API key configured. Add GEMINI_API_KEY to your .env file.");
+  if (errors.length > 0) {
+    throw new Error(`AI Tutor unavailable: ${errors.join(" | ")}`);
+  }
+
+  throw new Error("No AI key configured for tutor. Add GEMINI_API_KEY or GROQ_API_KEY to your .env file.");
 }
 
 
@@ -229,7 +342,7 @@ Preferred learning style: ${data.learningStyle ?? "mixed"}
 ${data.timeSlotPreference ? `Target Schedule Slot: ${data.timeSlotPreference}` : ""}
 ${data.syllabusText ? `CUSTOM SYLLABUS / MATERIAL PROVIDED BY USER:\n"""\n${data.syllabusText}\n"""\nCRITICAL INSTRUCTION: Strictly structure the modules and topics to reflect the chapters, topics, and key concepts in the user-provided syllabus above.` : ""}
 
-Design 4-6 progressive modules, each with 3-6 topics. For each topic give a 1-2 sentence description, estimated study minutes, 3-5 key concepts, and 2-4 recommended resource types (video, article, docs, practice). Be concrete and specific to the goal. Do not include external URLs.
+    Design 3-5 progressive modules, each with 3-5 concise topics. For each topic give a 1-sentence description, estimated study minutes, 3-4 key concepts, and 2 recommended resource types (video, article, docs, practice). Be concrete and concise. Do not include external URLs.
 
 Return ONLY valid json matching this TypeScript shape (no markdown, no commentary):
 {
@@ -248,16 +361,15 @@ Return ONLY valid json matching this TypeScript shape (no markdown, no commentar
   }>
 }`;
 
-    const raw = await callAI([
-      { role: "system", content: "You are a world-class learning designer. You produce concise, structured study roadmaps as strict json." },
-      { role: "user", content: prompt },
-    ]);
+    const raw = await callAI(
+      [
+        { role: "system", content: "You are a world-class learning designer. You produce concise, structured study roadmaps as strict json." },
+        { role: "user", content: prompt },
+      ],
+      { maxTokens: 6144, jsonMode: true }
+    );
 
-    const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
-    const jsonStart = cleaned.indexOf("{");
-    const jsonEnd = cleaned.lastIndexOf("}");
-    const jsonStr = jsonStart >= 0 && jsonEnd > jsonStart ? cleaned.slice(jsonStart, jsonEnd + 1) : cleaned;
-    const parsed = JSON.parse(jsonStr) as RoadmapAI;
+    const parsed = safeJsonParse<RoadmapAI>(raw);
 
     // Persist to DB as this user
     const { supabase, userId } = context;
@@ -346,7 +458,7 @@ Key concepts: ${(topic.key_concepts as string[])?.join(", ") ?? ""}`;
       }
     }
 
-    const answer = await callGeminiOnly([
+    const answer = await callTutor([
       {
         role: "system",
         content: `You are StudyVerse Tutor: a concise, patient teacher. Give short, structured explanations with examples. Use markdown. If context is provided, tailor your answer to that topic and goal.
@@ -421,8 +533,7 @@ Return ONLY valid JSON array matching this exact shape:
       { role: "user", content: prompt },
     ]);
 
-    const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
-    const questions = JSON.parse(cleaned);
+    const questions = safeJsonParse<any[]>(raw);
 
     if (existing && data.forceRegenerate) {
       const { data: updated, error } = await supabase
@@ -502,8 +613,7 @@ Return ONLY valid JSON array matching this exact shape:
       { role: "user", content: prompt },
     ]);
 
-    const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
-    const questions = JSON.parse(cleaned);
+    const questions = safeJsonParse<any[]>(raw);
 
     return { questions };
   });
@@ -582,8 +692,7 @@ Return ONLY valid JSON array matching:
       { role: "user", content: prompt },
     ]);
 
-    const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
-    const cards: Array<{ front: string; back: string }> = JSON.parse(cleaned);
+    const cards: Array<{ front: string; back: string }> = safeJsonParse(raw);
 
     const rows = cards.map((c) => ({
       user_id: userId,
