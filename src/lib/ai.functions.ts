@@ -122,10 +122,10 @@ async function callGemini(messages: Array<{ role: string; content: string }>, ap
   }
 
   const candidates = [
-    "v1beta/models/gemini-2.0-flash:generateContent",
-    "v1/models/gemini-2.0-flash:generateContent",
-    "v1beta/models/gemini-2.0-flash-lite:generateContent",
-    "v1/models/gemini-2.0-flash-lite:generateContent",
+    "v1beta/models/gemini-3.6-flash:generateContent",
+    "v1beta/models/gemini-3.8-flash:generateContent",
+    "v1beta/models/gemini-3.5-flash:generateContent",
+    "v1beta/models/gemini-flash-latest:generateContent",
   ];
 
   let lastErr = "";
@@ -196,6 +196,21 @@ async function callAI(messages: Array<{ role: string; content: string }>): Promi
   }
 
   throw new Error("No AI key configured. Add GROQ_API_KEY to your .env file (free at console.groq.com).");
+}
+
+/** Dedicated AI caller restricted exclusively to Google Gemini */
+async function callGeminiOnly(messages: Array<{ role: string; content: string }>): Promise<string> {
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (geminiKey) {
+    return callGemini(messages, geminiKey);
+  }
+
+  const lovableKey = process.env.LOVABLE_API_KEY;
+  if (lovableKey) {
+    return callLovableGateway(messages, lovableKey);
+  }
+
+  throw new Error("No Gemini API key configured. Add GEMINI_API_KEY to your .env file.");
 }
 
 
@@ -331,7 +346,7 @@ Key concepts: ${(topic.key_concepts as string[])?.join(", ") ?? ""}`;
       }
     }
 
-    const answer = await callAI([
+    const answer = await callGeminiOnly([
       {
         role: "system",
         content: `You are StudyVerse Tutor: a concise, patient teacher. Give short, structured explanations with examples. Use markdown. If context is provided, tailor your answer to that topic and goal.
@@ -358,6 +373,7 @@ ${topicContext}`,
 
 const quizInput = z.object({
   topicId: z.string().uuid(),
+  forceRegenerate: z.boolean().optional(),
 });
 
 export const generateQuizForTopic = createServerFn({ method: "POST" })
@@ -373,7 +389,7 @@ export const generateQuizForTopic = createServerFn({ method: "POST" })
       .eq("topic_id", data.topicId)
       .maybeSingle();
 
-    if (existing) return existing;
+    if (existing && !data.forceRegenerate) return existing;
 
     const { data: topic } = await supabase
       .from("roadmap_topics")
@@ -383,9 +399,12 @@ export const generateQuizForTopic = createServerFn({ method: "POST" })
 
     if (!topic) throw new Error("Topic not found");
 
-    const prompt = `Create a 4-question adaptive quiz for: "${topic.title}".
+    const prompt = `Create an 8-question adaptive quiz for: "${topic.title}".
 Description: ${topic.description ?? ""}
 Key concepts: ${(topic.key_concepts as string[])?.join(", ") ?? ""}
+
+Include a mix of difficulty levels: 3 easy, 3 medium, 2 hard.
+Each question must test a different concept or angle — no two questions should test the same thing.
 
 Return ONLY valid JSON array matching this exact shape:
 [
@@ -398,12 +417,26 @@ Return ONLY valid JSON array matching this exact shape:
 ]`;
 
     const raw = await callAI([
-      { role: "system", content: "You produce high quality multiple choice quiz JSON arrays." },
+      { role: "system", content: "You produce high quality multiple choice quiz JSON arrays. Always return exactly the number of questions requested." },
       { role: "user", content: prompt },
     ]);
 
     const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
     const questions = JSON.parse(cleaned);
+
+    if (existing && data.forceRegenerate) {
+      const { data: updated, error } = await supabase
+        .from("quizzes")
+        .update({
+          questions,
+          title: `${topic.title} — Quiz`,
+        })
+        .eq("id", existing.id)
+        .select("id, title, questions")
+        .single();
+      if (error || !updated) throw new Error(error?.message ?? "Failed to update quiz");
+      return updated;
+    }
 
     const { data: quiz, error } = await supabase
       .from("quizzes")
@@ -418,6 +451,96 @@ Return ONLY valid JSON array matching this exact shape:
 
     if (error || !quiz) throw new Error(error?.message ?? "Failed to save quiz");
     return quiz;
+  });
+
+// ── Generate More Quiz Questions (avoids repeats) ──────────────────────────
+const moreQuizInput = z.object({
+  topicId: z.string().uuid(),
+  existingQuestionTexts: z.array(z.string()),
+});
+
+export const generateMoreQuizQuestions = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((input: unknown) => moreQuizInput.parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase } = context;
+
+    const { data: topic } = await supabase
+      .from("roadmap_topics")
+      .select("title, description, key_concepts")
+      .eq("id", data.topicId)
+      .single();
+
+    if (!topic) throw new Error("Topic not found");
+
+    const avoidList = data.existingQuestionTexts
+      .map((q, i) => `${i + 1}. ${q}`)
+      .join("\n");
+
+    const prompt = `Create 6 NEW multiple-choice quiz questions for: "${topic.title}".
+Description: ${topic.description ?? ""}
+Key concepts: ${(topic.key_concepts as string[])?.join(", ") ?? ""}
+
+IMPORTANT: The student has already answered these questions. Do NOT repeat or rephrase any of them:
+${avoidList}
+
+Generate 6 completely fresh questions testing different aspects of the topic.
+Include a mix of difficulty: 2 easy, 2 medium, 2 hard.
+
+Return ONLY valid JSON array matching this exact shape:
+[
+  {
+    "question": "Question text here?",
+    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "correctIndex": 0,
+    "explanation": "Clear explanation of why this answer is correct."
+  }
+]`;
+
+    const raw = await callAI([
+      { role: "system", content: "You produce high quality multiple choice quiz JSON arrays. Never repeat questions the student has already seen." },
+      { role: "user", content: prompt },
+    ]);
+
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+    const questions = JSON.parse(cleaned);
+
+    return { questions };
+  });
+
+// ── Save Quiz Attempt (score persistence) ──────────────────────────────────
+const attemptInput = z.object({
+  quizId: z.string().uuid(),
+  scorePercentage: z.number().min(0).max(100),
+  userAnswers: z.record(z.unknown()),
+});
+
+export const saveQuizAttempt = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator((input: unknown) => attemptInput.parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+
+    const roundedScore = Math.round(data.scorePercentage);
+
+    const { data: attempt, error } = await supabase
+      .from("quiz_attempts")
+      .insert({
+        quiz_id: data.quizId,
+        user_id: userId,
+        score_percentage: roundedScore,
+        user_answers: data.userAnswers as any,
+      })
+      .select("id, score_percentage, completed_at")
+      .single();
+
+    if (error) {
+      console.error("Supabase error saving quiz attempt:", error);
+      throw new Error(error.message);
+    }
+
+    if (!attempt) throw new Error("Failed to save quiz attempt");
+    return attempt;
   });
 
 const flashcardsInput = z.object({
@@ -511,6 +634,11 @@ Include:
 - 📌 Overview & Core Definition
 - 🧠 Key Concepts & Formulas
 - 📊 Visual Concept Flowchart using strict standard Mermaid syntax inside a \`\`\`mermaid codeblock!
+  MERMAID SYNTAX RULES:
+  * Start with: flowchart TD
+  * ALWAYS wrap ALL node labels in double quotes: e.g., A["Front Pointer"] --> B["Element: O(1)"]. Never leave unquoted parentheses, colons, or formulas in labels.
+  * Use ONLY valid connectors: '-->' (solid arrow) or '-.->' (dotted arrow). NEVER use '.->'.
+  * Connect node to node (e.g., A --> B). Do NOT connect subgraphs directly.
 - 🎬 Granular Interactive Step-by-Step Simulation using a \`\`\`animation codeblock with a 5 to 8 step JSON script matching:
 \`\`\`animation
 {

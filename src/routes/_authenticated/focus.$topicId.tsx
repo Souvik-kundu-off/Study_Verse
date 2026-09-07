@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
-import { askTutor, generateQuizForTopic, generateFlashcardsForTopic, generateSmartNotes } from "@/lib/ai.functions";
+import { askTutor, generateQuizForTopic, generateFlashcardsForTopic, generateSmartNotes, generateMoreQuizQuestions, saveQuizAttempt } from "@/lib/ai.functions";
 import { logActivity } from "@/lib/progress.functions";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -49,6 +49,9 @@ function FocusWorkspace() {
   const [tab, setTab] = useState<"tutor" | "notes" | "flashcards" | "quiz" | "playground" | "resources">("tutor");
   const [generatingNotes, setGeneratingNotes] = useState(false);
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
+  const [generatingMore, setGeneratingMore] = useState(false);
+  const [seenQuestionTexts, setSeenQuestionTexts] = useState<string[]>([]);
+  const [tempQuizQuestions, setTempQuizQuestions] = useState<any[] | null>(null);
   const [generatingCards, setGeneratingCards] = useState(false);
   const [showVideo, setShowVideo] = useState(true);
   const [paneMode, setPaneMode] = useState<"split" | "video-only" | "workspace-only">("split");
@@ -81,9 +84,13 @@ function FocusWorkspace() {
   const [docName, setDocName] = useState("");
   const [docText, setDocText] = useState("");
   const [ingesting, setIngesting] = useState(false);
+  const [completing, setCompleting] = useState(false);
+  const completingRef = useRef(false); // ref guard prevents race on double-click
 
   const genNotes = useServerFn(generateSmartNotes);
   const genQuiz = useServerFn(generateQuizForTopic);
+  const genMoreQuiz = useServerFn(generateMoreQuizQuestions);
+  const saveAttempt = useServerFn(saveQuizAttempt);
   const genCards = useServerFn(generateFlashcardsForTopic);
   const ingestFn = useServerFn(ingestDocument);
 
@@ -118,6 +125,26 @@ function FocusWorkspace() {
       return data;
     },
   });
+
+  // Quiz attempts history
+  const { data: quizAttempts = [], refetch: refetchAttempts } = useQuery({
+    queryKey: ["quiz-attempts", quizData?.id],
+    enabled: !!quizData?.id,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("quiz_attempts")
+        .select("id, score_percentage, completed_at")
+        .eq("quiz_id", quizData!.id)
+        .eq("user_id", user.id)
+        .order("completed_at", { ascending: false });
+      return data ?? [];
+    },
+  });
+
+  // Effective quiz: use temp questions (from "generate more") or the DB quiz
+  const effectiveQuiz = tempQuizQuestions
+    ? { id: quizData?.id ?? "temp", title: quizData?.title ?? "Practice Quiz", questions: tempQuizQuestions }
+    : quizData;
 
   // Flashcards query
   const { data: cardsData, refetch: refetchCards } = useQuery({
@@ -451,21 +478,37 @@ function FocusWorkspace() {
   }
 
   async function markComplete() {
-    await supabase
-      .from("roadmap_topics")
-      .update({ status: "completed", completed_at: new Date().toISOString() })
-      .eq("id", topicId);
-    await saveSession(1);
-    qc.invalidateQueries();
-    await exitFullscreen();
-    navigate({ to: "/dashboard" });
+    if (completingRef.current) return; // guard against double-fire
+    completingRef.current = true;
+    setCompleting(true);
+    try {
+      await supabase
+        .from("roadmap_topics")
+        .update({ status: "completed", completed_at: new Date().toISOString() })
+        .eq("id", topicId);
+      await saveSession(1);
+      qc.invalidateQueries();
+      await exitFullscreen();
+      navigate({ to: "/dashboard" });
+    } catch (err) {
+      console.error("Failed to mark topic complete:", err);
+      toast.error("Something went wrong. Please try again.");
+      completingRef.current = false;
+      setCompleting(false);
+    }
   }
 
   async function exitFocus() {
-    await saveSession(0);
-    qc.invalidateQueries();
-    await exitFullscreen();
-    navigate({ to: "/dashboard" });
+    if (completingRef.current) return;
+    completingRef.current = true;
+    try {
+      await saveSession(0);
+      qc.invalidateQueries();
+      await exitFullscreen();
+      navigate({ to: "/dashboard" });
+    } catch {
+      completingRef.current = false;
+    }
   }
 
   // Timer
@@ -585,9 +628,11 @@ function FocusWorkspace() {
           </button>
           <button
             onClick={markComplete}
-            className="hidden items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white shadow-xs transition hover:bg-blue-700 sm:inline-flex"
+            disabled={completing}
+            className="hidden items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-1.5 text-xs font-semibold text-white shadow-xs transition hover:bg-blue-700 sm:inline-flex disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <CheckCircle2 className="h-3.5 w-3.5" /> Mark complete
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            {completing ? "Saving…" : "Mark complete"}
           </button>
           <button
             onClick={exitFocus}
@@ -800,9 +845,10 @@ function FocusWorkspace() {
               <span className="text-xs text-slate-600 font-medium">Finished reading and practicing?</span>
               <button
                 onClick={markComplete}
-                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 shadow-xs"
+                disabled={completing}
+                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 shadow-xs disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                Mark complete <CheckCircle2 className="h-4 w-4" />
+                {completing ? "Saving…" : "Mark complete"} <CheckCircle2 className="h-4 w-4" />
               </button>
             </div>
           </div>
@@ -889,13 +935,70 @@ function FocusWorkspace() {
             {/* Tab 3: Interactive Quiz */}
             {tab === "quiz" && (
               <QuizModal
-                quiz={quizData as any}
+                quiz={effectiveQuiz as any}
                 loading={generatingQuiz}
+                generatingMore={generatingMore}
+                pastAttempts={quizAttempts as any}
                 onGenerate={async () => {
                   setGeneratingQuiz(true);
-                  await genQuiz({ data: { topicId } });
-                  refetchQuiz();
-                  setGeneratingQuiz(false);
+                  setTempQuizQuestions(null);
+                  try {
+                    await genQuiz({ data: { topicId, forceRegenerate: true } });
+                    await refetchQuiz();
+                    toast.success("Fresh quiz generated!");
+                  } catch (err: any) {
+                    console.error("Failed to generate quiz:", err);
+                    toast.error("Failed to generate quiz");
+                  } finally {
+                    setGeneratingQuiz(false);
+                  }
+                }}
+                onComplete={async (pct, userAnswers) => {
+                  // Track seen questions for avoid-repeat
+                  const currentQs = (effectiveQuiz as any)?.questions ?? [];
+                  const newSeen = [...seenQuestionTexts, ...currentQs.map((q: any) => q.question)];
+                  setSeenQuestionTexts(newSeen);
+
+                  let targetQuizId = quizData?.id;
+                  if (!targetQuizId || targetQuizId === "temp") {
+                    try {
+                      const createdQuiz = await genQuiz({ data: { topicId } });
+                      targetQuizId = createdQuiz?.id;
+                      await refetchQuiz();
+                    } catch (e) {
+                      console.error("Failed to ensure quiz record exists:", e);
+                    }
+                  }
+
+                  // Save attempt to DB
+                  if (targetQuizId && targetQuizId !== "temp") {
+                    try {
+                      await saveAttempt({ data: { quizId: targetQuizId, scorePercentage: pct, userAnswers } });
+                      refetchAttempts();
+                      toast.success(`Quiz saved! Score: ${pct}%`);
+                    } catch (err: any) {
+                      console.error("Failed to save quiz attempt:", err);
+                      toast.error("Failed to save quiz attempt");
+                    }
+                  }
+                }}
+                onGenerateMore={async () => {
+                  setGeneratingMore(true);
+                  try {
+                    const currentQs = (effectiveQuiz as any)?.questions ?? [];
+                    const allSeen = [...seenQuestionTexts, ...currentQs.map((q: any) => q.question)];
+                    setSeenQuestionTexts(allSeen);
+
+                    const result = await genMoreQuiz({
+                      data: { topicId, existingQuestionTexts: allSeen },
+                    });
+                    setTempQuizQuestions(result.questions);
+                    toast.success("Fresh questions loaded!");
+                  } catch {
+                    toast.error("Failed to generate new questions");
+                  } finally {
+                    setGeneratingMore(false);
+                  }
                 }}
               />
             )}

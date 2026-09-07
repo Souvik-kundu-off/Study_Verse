@@ -29,6 +29,7 @@ import {
   Trash2
 } from "lucide-react";
 import { toast } from "sonner";
+import { FormattedText, MarkdownInline } from "@/components/ui/FormattedText";
 
 export const Route = createFileRoute("/_authenticated/courses")({
   head: () => ({
@@ -332,7 +333,7 @@ function CoursesCatalogPage() {
 
                 {/* Course Description Preview */}
                 <p className="text-xs text-ink-muted line-clamp-2 leading-relaxed">
-                  {course.description}
+                  <MarkdownInline text={course.description} />
                 </p>
               </div>
 
@@ -350,9 +351,10 @@ function CoursesCatalogPage() {
                 {/* ONLY "Know More" button on Card */}
                 <button
                   onClick={() => setSelectedCourseOverview(course)}
-                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-border bg-background hover:bg-surface-strong text-ink font-semibold py-2.5 text-xs transition shadow-sm"
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-surface hover:bg-surface-strong px-4 py-2.5 text-xs font-semibold text-ink transition shadow-2xs hover:border-brand/50 group/btn"
                 >
-                  <Info className="w-3.5 h-3.5 text-brand" /> Know More & View Syllabus
+                  <span>Know More & Details</span>
+                  <ArrowRight className="w-3.5 h-3.5 text-ink-muted group-hover/btn:translate-x-0.5 transition-transform" />
                 </button>
               </div>
             </div>
@@ -360,33 +362,34 @@ function CoursesCatalogPage() {
         </div>
       )}
 
-      {/* Course Overview Drawer / Modal */}
+      {/* Course Overview Details Modal */}
       {selectedCourseOverview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="w-full max-w-xl rounded-2xl border border-border bg-surface p-6 md:p-8 shadow-xl space-y-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-border pb-4">
-              <div className="space-y-1">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-brand">
-                  {selectedCourseOverview.category ?? "Computer Science"}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="relative w-full max-w-xl rounded-3xl border border-border bg-surface p-6 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
+            {/* Header with Title & Level Badge */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-brand">
+                  {selectedCourseOverview.category}
                 </span>
-                <h2 className="font-display text-2xl text-ink">{selectedCourseOverview.title}</h2>
+                <button
+                  onClick={() => setSelectedCourseOverview(null)}
+                  className="rounded-full p-1.5 text-ink-muted hover:bg-surface-strong hover:text-ink"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <button
-                onClick={() => setSelectedCourseOverview(null)}
-                className="text-ink-muted hover:text-ink text-sm font-semibold"
-              >
-                ✕
-              </button>
+              <h3 className="font-display text-2xl text-ink leading-tight">
+                {selectedCourseOverview.title}
+              </h3>
             </div>
 
-            <div className="space-y-5">
-              {/* Instructor Credibility Card */}
-              <div className="rounded-xl border border-border bg-background p-4 space-y-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-ink-subtle flex items-center gap-1">
-                  <Award className="w-3.5 h-3.5 text-brand" /> Lead Educator & Author
-                </span>
-                <div className="flex items-start gap-3 pt-1">
-                  <div className="w-10 h-10 rounded-full bg-surface-strong border border-border flex items-center justify-center text-ink font-bold font-display text-lg shrink-0">
+            {/* Modal Body Content */}
+            <div className="space-y-4">
+              {/* Instructor Information Banner */}
+              <div className="p-4 rounded-2xl border border-border bg-background flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-brand/10 text-brand font-bold grid place-items-center text-sm">
                     {selectedCourseOverview.instructorName.charAt(0)}
                   </div>
                   <div className="space-y-0.5">
@@ -405,9 +408,9 @@ function CoursesCatalogPage() {
               {/* Course Overview Details */}
               <div className="space-y-2">
                 <h4 className="text-xs font-semibold text-ink uppercase tracking-wider">About This Course</h4>
-                <p className="text-xs text-ink-muted leading-relaxed whitespace-pre-line">
-                  {selectedCourseOverview.description}
-                </p>
+                <div className="text-xs text-ink-muted leading-relaxed">
+                  <FormattedText content={selectedCourseOverview.description} />
+                </div>
               </div>
 
               {/* Course Badges & Highlights */}

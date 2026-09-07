@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { RotateCw, Zap, ChevronRight, LayoutGrid, Layers } from "lucide-react";
+import { MarkdownInline } from "@/components/ui/FormattedText";
 
 type Flashcard = {
   id: string;
@@ -130,7 +131,7 @@ export function FlashcardDeck({
 
                   {/* Content */}
                   <div className="my-3 font-bold text-sm leading-relaxed text-slate-900">
-                    {isFlipped ? card.back : card.front}
+                    <MarkdownInline text={isFlipped ? card.back : card.front} />
                   </div>
 
                   {/* Bottom Footer Indicator */}
@@ -168,7 +169,7 @@ export function FlashcardDeck({
             </span>
 
             <div className="font-extrabold text-lg md:text-xl text-slate-900 max-w-md leading-relaxed">
-              {singleFlipped ? current.back : current.front}
+              <MarkdownInline text={singleFlipped ? current.back : current.front} />
             </div>
 
             <div className="absolute bottom-4 right-4 flex items-center gap-1.5 text-xs text-slate-600 font-semibold group-hover:text-blue-700">

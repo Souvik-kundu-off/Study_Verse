@@ -110,19 +110,38 @@ function Dashboard() {
 
   const activeGoal = allGoals?.find((g) => g.id === selectedGoalId) ?? allGoals?.[0];
 
-  const { data: topics, isLoading: topicsLoading } = useQuery({
+  const { data: topicsData, isLoading: topicsLoading } = useQuery({
     enabled: !!activeGoal?.id,
-    queryKey: ["goal-topics", activeGoal?.id],
+    queryKey: ["goal-modules-topics", activeGoal?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data: modules, error: mErr } = await supabase
+        .from("roadmap_modules")
+        .select("id, ordinal")
+        .eq("goal_id", activeGoal!.id)
+        .order("ordinal", { ascending: true });
+      if (mErr) throw mErr;
+
+      const { data: topics, error: tErr } = await supabase
         .from("roadmap_topics")
         .select("id, title, description, estimated_minutes, status, ordinal, module_id")
         .eq("goal_id", activeGoal!.id)
         .order("ordinal", { ascending: true });
-      if (error) throw error;
-      return data as Topic[];
+      if (tErr) throw tErr;
+
+      const moduleOrdinalMap = new Map((modules ?? []).map((m) => [m.id, m.ordinal]));
+
+      const ordered = [...(topics ?? [])].sort((a, b) => {
+        const modA = moduleOrdinalMap.get(a.module_id) ?? 0;
+        const modB = moduleOrdinalMap.get(b.module_id) ?? 0;
+        if (modA !== modB) return modA - modB;
+        return a.ordinal - b.ordinal;
+      });
+
+      return ordered as Topic[];
     },
   });
+
+  const orderedTopics = topicsData ?? [];
 
   const fetchProgress = useServerFn(getProgress);
   const { data: progress } = useQuery({
@@ -130,12 +149,8 @@ function Dashboard() {
     queryFn: () => fetchProgress(),
   });
 
-  // Order topics by module then ordinal
-  const orderedTopics = topics
-    ? [...topics].sort((a, b) => a.module_id.localeCompare(b.module_id) || a.ordinal - b.ordinal)
-    : [];
-
-  const currentTopic = orderedTopics.find((t) => t.status !== "completed");
+  const currentTopicIndex = orderedTopics.findIndex((t) => t.status !== "completed");
+  const currentTopic = currentTopicIndex !== -1 ? orderedTopics[currentTopicIndex] : null;
   const completed = orderedTopics.filter((t) => t.status === "completed").length;
   const total = orderedTopics.length;
   const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
@@ -271,7 +286,7 @@ function Dashboard() {
                 </span>
                 <span className="inline-flex items-center gap-1.5">
                   <Target className="h-4 w-4" />
-                  Topic {completed + 1} of {total}
+                  Topic {currentTopicIndex + 1} of {total}
                 </span>
               </div>
               <div className="mt-8 flex flex-wrap gap-3">
