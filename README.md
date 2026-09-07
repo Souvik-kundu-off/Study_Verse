@@ -1,10 +1,38 @@
-# StudyFlow AI
+# StudyFlow AI (StudyVerse)
 
-StudyVerse Product Design Brief
+> **AI-Powered Personalized Learning Platform**
 
-AI-Powered Personalized Learning Platform
+---
 
-Project Overview
+## 🚀 Quick Start (Mac, Windows & Linux)
+
+### Prerequisites
+- **Node.js**: `v22.x` (LTS recommended) or `>=20.19.0` (or [Bun](https://bun.sh))
+- **Package Manager**: `npm`, `pnpm`, or `bun`
+
+### Setup & Run
+
+```bash
+# 1. Clone the repository
+git clone <repo-url>
+cd Study_Verse
+
+# 2. Install dependencies
+npm install
+# or with Bun:
+# bun install
+
+# 3. Start the development server
+npm run dev
+# or with Bun:
+# bun dev
+```
+
+The application will be live at [http://localhost:8080](http://localhost:8080).
+
+---
+
+## Project Overview
 
 StudyVerse is an AI-powered personalized learning platform designed to become a student's complete learning workspace. Unlike traditional learning platforms that only provide courses or AI chat, StudyVerse combines planning, learning, note-taking, revision, analytics, and AI assistance into a single ecosystem.
 
