@@ -12,7 +12,8 @@
     "build:dev": "cross-env NODE_OPTIONS=--experimental-require-module vite build --mode development",
     "preview": "cross-env NODE_OPTIONS=--experimental-require-module vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "supabase:keepalive": "node scripts/keep-supabase-alive.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

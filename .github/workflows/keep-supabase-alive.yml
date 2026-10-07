@@ -1,0 +1,35 @@
+name: Keep Supabase Alive
+
+on:
+  schedule:
+    # Runs everyday at 04:00 UTC (9:30 AM IST) to guarantee Supabase never pauses due to 7-day inactivity
+    - cron: '0 4 * * *'
+  workflow_dispatch: # Allows manual trigger from the GitHub Actions tab anytime
+
+jobs:
+  keep-alive:
+    name: Ping Supabase
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run Supabase Keep-Alive Ping
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || secrets.SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY || secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_PUBLISHABLE_KEY" ]; then
+            echo "::error::Missing Supabase credentials in GitHub Secrets!"
+            echo "Please go to your GitHub repository -> Settings -> Secrets and variables -> Actions"
+            echo "and add the following repository secrets:"
+            echo "  - VITE_SUPABASE_URL"
+            echo "  - VITE_SUPABASE_PUBLISHABLE_KEY"
+            exit 1
+          fi
+          node scripts/keep-supabase-alive.mjs
