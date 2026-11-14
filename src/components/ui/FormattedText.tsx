@@ -1,10 +1,49 @@
-import React from "react";
+import React, { useState } from "react";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { UniversalAnimator } from "./UniversalAnimator";
+import { Copy, Check } from "lucide-react";
 
 interface FormattedTextProps {
   content: string;
   className?: string;
+}
+
+function CodeBlockViewer({ code, lang }: { code: string; lang: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="my-4 overflow-hidden rounded-xl border border-slate-800 bg-slate-950 shadow-md">
+      <div className="flex items-center justify-between border-b border-slate-800/80 bg-slate-900/90 px-4 py-1.5 text-[11px] font-mono text-slate-400">
+        <span className="font-semibold uppercase tracking-wider text-slate-300">{lang || "code"}</span>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs text-slate-400 hover:bg-slate-800 hover:text-white transition cursor-pointer"
+        >
+          {copied ? (
+            <>
+              <Check className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="text-emerald-400 font-sans">Copied!</span>
+            </>
+          ) : (
+            <>
+              <Copy className="w-3.5 h-3.5" />
+              <span className="font-sans">Copy</span>
+            </>
+          )}
+        </button>
+      </div>
+      <div className="overflow-x-auto p-4 text-xs font-mono text-emerald-300 leading-relaxed">
+        <pre>{code}</pre>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -22,6 +61,9 @@ export function FormattedText({ content, className = "" }: FormattedTextProps) {
   let codeBuffer: string[] = [];
   let listBuffer: string[] = [];
   let tableBuffer: string[] = [];
+  let inDetails = false;
+  let detailsSummary = "";
+  let detailsBuffer: string[] = [];
 
   const flushList = (keyPrefix: string) => {
     if (listBuffer.length > 0) {
@@ -94,6 +136,32 @@ export function FormattedText({ content, className = "" }: FormattedTextProps) {
     }
   };
 
+  const flushDetails = (keyPrefix: string) => {
+    if (inDetails && (detailsSummary || detailsBuffer.length > 0)) {
+      elements.push(
+        <details
+          key={`${keyPrefix}-details`}
+          className="my-3.5 overflow-hidden rounded-xl border border-indigo-200/90 bg-indigo-50/40 p-4 transition-all shadow-2xs group"
+        >
+          <summary className="cursor-pointer font-bold text-indigo-950 select-none flex items-center gap-2 hover:text-indigo-700">
+            <span className="text-base select-none">💡</span>
+            <span>{renderInlineFormatting(detailsSummary || "Click to Reveal Solution & In-Depth Explanation")}</span>
+          </summary>
+          <div className="mt-3 pt-3 border-t border-indigo-100/90 text-sm leading-relaxed text-slate-800 space-y-2">
+            {detailsBuffer.map((dl, dli) => (
+              <p key={dli} className="text-slate-800 leading-relaxed">
+                {renderInlineFormatting(dl)}
+              </p>
+            ))}
+          </div>
+        </details>
+      );
+      inDetails = false;
+      detailsSummary = "";
+      detailsBuffer = [];
+    }
+  };
+
   const flushCode = (keyPrefix: string) => {
     if (codeBuffer.length > 0) {
       const codeText = codeBuffer.join("\n");
@@ -103,9 +171,7 @@ export function FormattedText({ content, className = "" }: FormattedTextProps) {
         elements.push(<UniversalAnimator key={`${keyPrefix}-anim`} data={codeText} />);
       } else {
         elements.push(
-          <div key={`${keyPrefix}-code`} className="my-4 overflow-x-auto rounded-xl bg-slate-950 border border-slate-800 p-4 text-xs font-mono text-emerald-300 shadow-xs">
-            <pre>{codeText}</pre>
-          </div>
+          <CodeBlockViewer key={`${keyPrefix}-code`} code={codeText} lang={codeLang} />
         );
       }
       codeBuffer = [];
@@ -115,6 +181,31 @@ export function FormattedText({ content, className = "" }: FormattedTextProps) {
 
   lines.forEach((line, index) => {
     const trimmed = line.trim();
+
+    // 0. Details / Collapsible Block (<details><summary>...</summary>...</details>)
+    if (trimmed.startsWith("<details")) {
+      flushList(`details-start-${index}`);
+      flushTable(`details-start-table-${index}`);
+      inDetails = true;
+      detailsSummary = "";
+      detailsBuffer = [];
+      return;
+    }
+    if (trimmed.includes("</details>")) {
+      flushDetails(`details-end-${index}`);
+      return;
+    }
+    if (inDetails) {
+      if (trimmed.includes("<summary>")) {
+        const sumMatch = trimmed.match(/<summary>(.*?)<\/summary>/i) || trimmed.match(/<summary>(.*)/i);
+        if (sumMatch) {
+          detailsSummary = sumMatch[1].replace(/<\/summary>/i, "").trim();
+        }
+        return;
+      }
+      detailsBuffer.push(line);
+      return;
+    }
 
     // 1. Code Block Fence
     if (trimmed.startsWith("```")) {
@@ -173,22 +264,26 @@ export function FormattedText({ content, className = "" }: FormattedTextProps) {
       const cleanHeading = headingMatch[2]
         .replace(/^[\s*#]+/, "")
         .replace(/[*#\s]+$/, "");
+      const anchorId = cleanHeading
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/(^-|-$)/g, "");
 
       if (level === 1) {
         elements.push(
-          <h1 key={`h1-${index}`} className="mt-6 mb-3 text-2xl font-extrabold tracking-tight text-slate-900 border-b border-slate-200 pb-2">
+          <h1 id={anchorId} key={`h1-${index}`} className="mt-6 mb-3 text-2xl font-extrabold tracking-tight text-slate-900 border-b border-slate-200 pb-2 scroll-mt-24">
             {renderInlineFormatting(cleanHeading)}
           </h1>
         );
       } else if (level === 2) {
         elements.push(
-          <h2 key={`h2-${index}`} className="mt-5 mb-2.5 text-xl font-bold text-blue-700">
+          <h2 id={anchorId} key={`h2-${index}`} className="mt-5 mb-2.5 text-xl font-bold text-blue-700 scroll-mt-24">
             {renderInlineFormatting(cleanHeading)}
           </h2>
         );
       } else if (level === 3 || level === 4) {
         elements.push(
-          <div key={`h3-${index}`} className="mt-5 mb-3 flex items-center gap-2 rounded-xl bg-blue-50/80 px-3.5 py-2 border-l-4 border-blue-600">
+          <div id={anchorId} key={`h3-${index}`} className="mt-5 mb-3 flex items-center gap-2 rounded-xl bg-blue-50/80 px-3.5 py-2 border-l-4 border-blue-600 scroll-mt-24">
             <h3 className="text-sm font-extrabold tracking-wide text-blue-950 uppercase">
               {renderInlineFormatting(cleanHeading)}
             </h3>
@@ -196,7 +291,7 @@ export function FormattedText({ content, className = "" }: FormattedTextProps) {
         );
       } else {
         elements.push(
-          <h4 key={`h4-${index}`} className="mt-4 mb-2 text-sm font-bold text-slate-900">
+          <h4 id={anchorId} key={`h4-${index}`} className="mt-4 mb-2 text-sm font-bold text-slate-900 scroll-mt-24">
             {renderInlineFormatting(cleanHeading)}
           </h4>
         );
@@ -204,12 +299,29 @@ export function FormattedText({ content, className = "" }: FormattedTextProps) {
       return;
     }
 
-    // 7. Callout Blockquote (> text)
+    // 7. Semantic Callout Blockquote (> text)
     if (trimmed.startsWith(">")) {
       const quote = trimmed.replace(/^>+\s*/, "");
+      const lower = quote.toLowerCase();
+
+      let borderStyle = "border-blue-600 bg-blue-50/80 text-blue-950";
+      let icon = "📌";
+
+      if (quote.includes("⚠️") || lower.includes("warning") || lower.includes("pitfall") || lower.includes("trap") || lower.includes("caution")) {
+        borderStyle = "border-amber-500 bg-amber-50/90 text-amber-950";
+        icon = "⚠️";
+      } else if (quote.includes("💡") || lower.includes("pro tip") || lower.includes("tip:") || lower.includes("insight")) {
+        borderStyle = "border-emerald-500 bg-emerald-50/90 text-emerald-950";
+        icon = "💡";
+      } else if (quote.includes("🎯") || lower.includes("exam") || lower.includes("interview") || lower.includes("test tip")) {
+        borderStyle = "border-purple-500 bg-purple-50/90 text-purple-950";
+        icon = "🎯";
+      }
+
       elements.push(
-        <div key={`quote-${index}`} className="my-3 rounded-xl border-l-4 border-blue-600 bg-blue-50/80 p-3.5 text-xs text-blue-950 font-medium leading-relaxed">
-          {renderInlineFormatting(quote)}
+        <div key={`quote-${index}`} className={`my-3.5 flex items-start gap-2.5 rounded-xl border-l-4 ${borderStyle} p-3.5 text-xs font-medium leading-relaxed shadow-2xs`}>
+          <span className="text-sm select-none shrink-0">{icon}</span>
+          <div className="flex-1">{renderInlineFormatting(quote.replace(/^[⚠️💡🎯📌]\s*/, ""))}</div>
         </div>
       );
       return;
@@ -226,6 +338,7 @@ export function FormattedText({ content, className = "" }: FormattedTextProps) {
   flushList("end");
   flushTable("end");
   flushCode("end");
+  flushDetails("end");
 
   return <div className={`formatted-text font-sans ${className}`}>{elements}</div>;
 }

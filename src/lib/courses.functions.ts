@@ -61,6 +61,7 @@ export const createCourse = createServerFn({ method: "POST" })
           level: "intermediate",
           minutesPerDay: 45,
           syllabusText: data.syllabusText,
+          depth: data.syllabusText ? "comprehensive" : "standard",
         },
       });
 

@@ -4,11 +4,11 @@ import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { askTutor, generateQuizForTopic, generateFlashcardsForTopic, generateSmartNotes, generateMoreQuizQuestions, saveQuizAttempt } from "@/lib/ai.functions";
 import { logActivity } from "@/lib/progress.functions";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   X, Play, Pause, RotateCcw, FileText, BookOpen, Bot,
-  Send, Loader2, CheckCircle2, Video, PenLine, Layers, HelpCircle, Code2, Wand2, ExternalLink, RefreshCw, Maximize2, Minimize2, Save, Search, Download, Trash2, Upload, Columns, PanelLeft, PanelRight, Sparkles
+  Send, Loader2, CheckCircle2, Video, PenLine, Layers, HelpCircle, Code2, Wand2, ExternalLink, RefreshCw, Maximize2, Minimize2, Save, Search, Download, Trash2, Upload, Columns, PanelLeft, PanelRight, Sparkles, Volume2, VolumeX, Copy, Check, List
 } from "lucide-react";
 import { FlashcardDeck } from "@/components/study/FlashcardDeck";
 import { QuizModal } from "@/components/study/QuizModal";
@@ -444,6 +444,113 @@ function FocusWorkspace() {
     toast.success("Cleared personal notes.");
   };
 
+  // ── Masterclass Lesson Notes Tools (Audio reader, Export, Section Quick Jump) ──
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isSpeechPaused, setIsSpeechPaused] = useState(false);
+  const [copiedLessonNotes, setCopiedLessonNotes] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
+  const handleToggleSpeech = () => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      toast.error("Text-to-speech audio reader is not supported in this browser.");
+      return;
+    }
+    if (isSpeaking) {
+      if (isSpeechPaused) {
+        window.speechSynthesis.resume();
+        setIsSpeechPaused(false);
+      } else {
+        window.speechSynthesis.pause();
+        setIsSpeechPaused(true);
+      }
+      return;
+    }
+
+    const cleanSpeechText = aiLessonGuide
+      .replace(/```[\s\S]*?```/g, "Code block omitted.")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/[#*`_~|>-]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (!cleanSpeechText) {
+      toast.error("No lesson text to read aloud.");
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(cleanSpeechText);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      setIsSpeechPaused(false);
+    };
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      setIsSpeechPaused(false);
+    };
+    window.speechSynthesis.speak(utterance);
+    setIsSpeaking(true);
+    setIsSpeechPaused(false);
+    toast.success("Playing audio narration of lesson notes");
+  };
+
+  const handleStopSpeech = () => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsSpeaking(false);
+    setIsSpeechPaused(false);
+  };
+
+  const handleDownloadLessonNotes = () => {
+    if (!aiLessonGuide) return;
+    const cleanTitle = (topic?.title || "Lesson").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const filename = `${cleanTitle}_Masterclass_Notes.md`;
+    const fullMarkdown = `# ${topic?.title ?? "Lesson Notes"}\n\n${aiLessonGuide}`;
+    const blob = new Blob([fullMarkdown], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Downloaded masterclass lesson notes (.md)!");
+  };
+
+  const handleCopyLessonNotes = () => {
+    if (!aiLessonGuide) return;
+    navigator.clipboard.writeText(aiLessonGuide);
+    setCopiedLessonNotes(true);
+    setTimeout(() => setCopiedLessonNotes(false), 2000);
+    toast.success("Lesson notes copied to clipboard!");
+  };
+
+  const lessonSections = useMemo(() => {
+    if (!aiLessonGuide) return [];
+    const matches: Array<{ title: string; anchorId: string }> = [];
+    const lines = aiLessonGuide.split("\n");
+    for (const l of lines) {
+      const m = l.trim().match(/^(#{2,4})\s*(.*)$/);
+      if (m) {
+        const cleanHeading = m[2].replace(/^[\s*#]+/, "").replace(/[*#\s]+$/, "");
+        const anchorId = cleanHeading.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+        if (cleanHeading.length > 2 && !matches.some((x) => x.anchorId === anchorId)) {
+          matches.push({ title: cleanHeading, anchorId });
+        }
+      }
+    }
+    return matches;
+  }, [aiLessonGuide]);
+
   const log = useServerFn(logActivity);
   const loggedRef = useRef(false);
 
@@ -774,19 +881,100 @@ function FocusWorkspace() {
 
               {/* AI Generated Notes / Lesson Text */}
               <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <h3 className="inline-flex items-center gap-2 font-display text-lg font-bold text-slate-900">
-                    <BookOpen className="h-4 w-4 text-blue-600" /> Lesson Notes & Guide
-                  </h3>
-                  <button
-                    onClick={handleAutoNotes}
-                    disabled={generatingNotes}
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:underline disabled:opacity-50"
-                  >
-                    <RefreshCw className={`h-3 w-3 ${generatingNotes ? "animate-spin" : ""}`} />
-                    {generatingNotes ? "Generating..." : "Regenerate"}
-                  </button>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <h3 className="inline-flex items-center gap-2 font-display text-lg font-bold text-slate-900">
+                      <BookOpen className="h-4 w-4 text-blue-600" /> Lesson Notes & Guide
+                    </h3>
+                    <span className="hidden sm:inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200/60 uppercase tracking-wider">
+                      Masterclass
+                    </span>
+                  </div>
+
+                  {/* Top Note Actions */}
+                  <div className="flex items-center gap-1.5">
+                    {/* Audio Read-Aloud */}
+                    <button
+                      onClick={handleToggleSpeech}
+                      disabled={!aiLessonGuide || generatingNotes}
+                      title={isSpeaking ? (isSpeechPaused ? "Resume Audio" : "Pause Audio") : "Listen Aloud (Text-to-Speech)"}
+                      className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition border cursor-pointer ${
+                        isSpeaking
+                          ? "bg-amber-500 text-white border-amber-600 shadow-sm animate-pulse"
+                          : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                      } disabled:opacity-50`}
+                    >
+                      <Volume2 className={`h-3.5 w-3.5 ${isSpeaking ? "text-white" : "text-blue-600"}`} />
+                      <span className="hidden md:inline">{isSpeaking ? (isSpeechPaused ? "Resume" : "Pause Audio") : "Listen"}</span>
+                    </button>
+                    {isSpeaking && (
+                      <button
+                        onClick={handleStopSpeech}
+                        title="Stop Audio"
+                        className="inline-flex items-center rounded-lg px-2 py-1 text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 cursor-pointer"
+                      >
+                        <VolumeX className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+
+                    {/* Copy Full Notes */}
+                    <button
+                      onClick={handleCopyLessonNotes}
+                      disabled={!aiLessonGuide || generatingNotes}
+                      title="Copy Lesson Notes Markdown"
+                      className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100 transition cursor-pointer disabled:opacity-50"
+                    >
+                      {copiedLessonNotes ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5 text-slate-500" />}
+                      <span className="hidden md:inline">{copiedLessonNotes ? "Copied!" : "Copy"}</span>
+                    </button>
+
+                    {/* Export / Download Markdown */}
+                    <button
+                      onClick={handleDownloadLessonNotes}
+                      disabled={!aiLessonGuide || generatingNotes}
+                      title="Download Masterclass Markdown (.md)"
+                      className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100 transition cursor-pointer disabled:opacity-50"
+                    >
+                      <Download className="h-3.5 w-3.5 text-slate-500" />
+                      <span className="hidden md:inline">Export .md</span>
+                    </button>
+
+                    {/* Regenerate Masterclass Notes */}
+                    <button
+                      onClick={handleAutoNotes}
+                      disabled={generatingNotes}
+                      title="Regenerate with Comprehensive Masterclass AI"
+                      className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className={`h-3.5 w-3.5 text-blue-600 ${generatingNotes ? "animate-spin" : ""}`} />
+                      <span className="hidden sm:inline">{generatingNotes ? "Generating..." : "Regenerate"}</span>
+                    </button>
+                  </div>
                 </div>
+
+                {/* Section Quick Jump Bar */}
+                {!generatingNotes && lessonSections.length > 0 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pt-3 pb-2 scrollbar-none border-b border-slate-100 text-xs">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 shrink-0 mr-1 flex items-center gap-1">
+                      <List className="w-3 h-3 text-blue-600" /> Quick Jump:
+                    </span>
+                    {lessonSections.map((sec) => (
+                      <button
+                        key={sec.anchorId}
+                        type="button"
+                        onClick={() => {
+                          const el = document.getElementById(sec.anchorId);
+                          if (el) {
+                            el.scrollIntoView({ behavior: "smooth", block: "start" });
+                          }
+                        }}
+                        className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg bg-slate-50 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 px-2.5 py-1 text-[11px] font-medium text-slate-700 border border-slate-200/80 transition cursor-pointer shrink-0"
+                      >
+                        {sec.title}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 {generatingNotes && (
                   <div className="space-y-3 py-6">

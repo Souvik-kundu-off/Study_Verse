@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Plus, Loader2, Upload, BookOpen, Sun, Moon, Sunrise, Sunset } from "lucide-react";
+import { Plus, Loader2, Upload, BookOpen, Sun, Moon, Sunrise, Sunset, Zap, Library, GraduationCap, Sparkles } from "lucide-react";
 
 interface CreateTrackModalProps {
   open: boolean;
@@ -40,6 +40,13 @@ const TIME_SLOTS = [
   { id: "flexible", label: "Flexible", icon: BookOpen, desc: "Study whenever you have free time" },
 ] as const;
 
+const DEPTH_OPTIONS = [
+  { id: "auto", label: "Smart Adaptive", icon: Sparkles, modules: "AI-Decided", desc: "AI autonomously decides module & chapter count based on subject breadth (Recommended)" },
+  { id: "comprehensive", label: "Deep Dive", icon: GraduationCap, modules: "10–16+", desc: "Exhaustive mastery with 5–8 in-depth chapters per module (DSA, ML, System Design)" },
+  { id: "standard", label: "Standard", icon: Library, modules: "7–10", desc: "University semester course with 4–6 detailed chapters per module" },
+  { id: "sprint", label: "Sprint", icon: Zap, modules: "4–6", desc: "Focused crash course for urgent reviews" },
+] as const;
+
 export function CreateTrackModal({ open, onOpenChange, onSuccess }: CreateTrackModalProps) {
   const qc = useQueryClient();
   const gen = useServerFn(generateRoadmap);
@@ -53,6 +60,23 @@ export function CreateTrackModal({ open, onOpenChange, onSuccess }: CreateTrackM
   const [minutesPerDay, setMinutesPerDay] = useState(60);
   const [timeSlot, setTimeSlot] = useState<"morning" | "afternoon" | "evening" | "night" | "flexible">("flexible");
   const [syllabusText, setSyllabusText] = useState("");
+  const [depth, setDepth] = useState<"auto" | "sprint" | "standard" | "comprehensive">("auto");
+
+  const handleTitleChange = (val: string) => {
+    setGoalTitle(val);
+    const lower = val.toLowerCase();
+    if (
+      lower.includes("dsa") ||
+      lower.includes("data structure") ||
+      lower.includes("algorithm") ||
+      lower.includes("system design") ||
+      lower.includes("operating system") ||
+      lower.includes("machine learning") ||
+      lower.includes("gate")
+    ) {
+      setDepth("comprehensive");
+    }
+  };
 
   const [fileFileName, setFileFileName] = useState<string | null>(null);
   const [extractingOcr, setExtractingOcr] = useState(false);
@@ -119,6 +143,7 @@ export function CreateTrackModal({ open, onOpenChange, onSuccess }: CreateTrackM
           minutesPerDay,
           timeSlotPreference: timeSlot,
           syllabusText: activeTab === "syllabus" && syllabusText.trim() ? syllabusText.trim() : undefined,
+          depth,
         },
       });
 
@@ -190,7 +215,7 @@ export function CreateTrackModal({ open, onOpenChange, onSuccess }: CreateTrackM
               id="goalTitle"
               placeholder="e.g. Data Structures & Algorithms, Class 12 Physics..."
               value={goalTitle}
-              onChange={(e) => setGoalTitle(e.target.value)}
+              onChange={(e) => handleTitleChange(e.target.value)}
               required
               className="mt-1"
             />
@@ -227,12 +252,46 @@ export function CreateTrackModal({ open, onOpenChange, onSuccess }: CreateTrackM
             </div>
           </div>
 
+          {/* Curriculum Depth */}
+          <div>
+            <Label className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+              Curriculum Depth
+            </Label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1.5">
+              {DEPTH_OPTIONS.map((opt) => {
+                const Icon = opt.icon;
+                const selected = depth === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setDepth(opt.id)}
+                    className={`flex flex-col items-center justify-center p-2.5 rounded-lg border text-center transition ${
+                      selected
+                        ? "border-indigo-500 bg-indigo-50/50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-medium"
+                        : "border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
+                    }`}
+                  >
+                    <Icon className={`w-4 h-4 mb-1 ${selected ? "text-indigo-600 dark:text-indigo-400" : "text-slate-500"}`} />
+                    <span className="text-xs font-semibold">{opt.label}</span>
+                    <span className={`text-[10px] mt-0.5 ${selected ? "text-indigo-500 dark:text-indigo-400" : "text-slate-400"}`}>
+                      {opt.modules} modules
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
+              {DEPTH_OPTIONS.find((d) => d.id === depth)?.desc}
+            </p>
+          </div>
+
           {/* Time Slot Preference */}
           <div>
             <Label className="text-xs font-semibold text-slate-600 dark:text-slate-400">
               Preferred Study Time Slot
             </Label>
-            <div className="grid grid-cols-3 gap-2 mt-1.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1.5">
               {TIME_SLOTS.map((slot) => {
                 const Icon = slot.icon;
                 const selected = timeSlot === slot.id;

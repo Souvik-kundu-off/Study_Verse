@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowRight, GraduationCap, Compass, Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, GraduationCap, Compass, Loader2, Zap, Library } from "lucide-react";
 import { generateRoadmap } from "@/lib/ai.functions";
 
 export const Route = createFileRoute("/_authenticated/onboarding")({
@@ -59,6 +59,7 @@ type State = {
   learningStyle: string;
   syllabusText: string;
   timeSlotPreference: "morning" | "afternoon" | "evening" | "night" | "flexible";
+  depth: "auto" | "sprint" | "standard" | "comprehensive";
 };
 
 function Onboarding() {
@@ -77,9 +78,27 @@ function Onboarding() {
     learningStyle: "Mixed",
     syllabusText: "",
     timeSlotPreference: "flexible",
+    depth: "auto",
   });
 
-  const steps = ["Goal", "Category", "Level", "Time", "Style", "Syllabus"];
+  const steps = ["Goal", "Category", "Level", "Depth", "Time", "Style", "Syllabus"];
+
+  const handleTitleUpdate = (title: string) => {
+    const lower = title.toLowerCase();
+    const isBroad =
+      lower.includes("dsa") ||
+      lower.includes("data structure") ||
+      lower.includes("algorithm") ||
+      lower.includes("google") ||
+      lower.includes("gate") ||
+      lower.includes("machine learning") ||
+      lower.includes("system design");
+    setState((s) => ({
+      ...s,
+      goalTitle: title,
+      depth: isBroad ? "comprehensive" : s.depth,
+    }));
+  };
 
   async function handleGenerate() {
     setGenerating(true);
@@ -95,6 +114,7 @@ function Onboarding() {
           learningStyle: state.learningStyle,
           syllabusText: state.syllabusText.trim() || undefined,
           timeSlotPreference: state.timeSlotPreference,
+          depth: state.depth,
         },
       });
       await qc.invalidateQueries({ queryKey: ["profile"] });
@@ -138,14 +158,14 @@ function Onboarding() {
         <div className="flex flex-1 flex-col justify-center py-8">
           {step === 0 && (
             <StepShell
-              eyebrow="Step 1 of 5"
+              eyebrow="Step 1 of 7"
               title="What do you want to achieve?"
               subtitle="Set one clear goal. Something that would matter if you finished it."
             >
               <input
                 autoFocus
                 value={state.goalTitle}
-                onChange={(e) => setState({ ...state, goalTitle: e.target.value })}
+                onChange={(e) => handleTitleUpdate(e.target.value)}
                 placeholder="e.g. Crack Google SDE interview"
                 className="w-full rounded-2xl border border-border bg-background px-4 py-4 font-display text-2xl text-ink placeholder:text-ink-subtle focus:border-ink focus:outline-none"
               />
@@ -153,7 +173,7 @@ function Onboarding() {
                 {EXAMPLE_GOALS.map((g) => (
                   <button
                     key={g}
-                    onClick={() => setState({ ...state, goalTitle: g })}
+                    onClick={() => handleTitleUpdate(g)}
                     className="rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-ink-muted transition hover:border-ink hover:text-ink"
                   >
                     {g}
@@ -172,7 +192,7 @@ function Onboarding() {
 
           {step === 1 && (
             <StepShell
-              eyebrow="Step 2 of 5"
+              eyebrow="Step 2 of 7"
               title="What area is it in?"
               subtitle="Helps us pick better resources."
             >
@@ -191,7 +211,7 @@ function Onboarding() {
 
           {step === 2 && (
             <StepShell
-              eyebrow="Step 3 of 5"
+              eyebrow="Step 3 of 7"
               title="Where are you starting from?"
               subtitle="Be honest. We'll adjust the pace."
             >
@@ -217,7 +237,42 @@ function Onboarding() {
 
           {step === 3 && (
             <StepShell
-              eyebrow="Step 4 of 5"
+              eyebrow="Step 4 of 7"
+              title="How deep should we go?"
+              subtitle="Bigger subjects need more modules. Pick the right depth for your goal."
+            >
+              <div className="grid gap-2">
+                <ChoiceCard
+                  selected={state.depth === "auto"}
+                  onClick={() => setState({ ...state, depth: "auto" })}
+                  label="✨ Smart Adaptive — AI-Decided (Recommended)"
+                  description="AI evaluates the subject and builds as many modules and detailed chapters as needed for true mastery."
+                />
+                <ChoiceCard
+                  selected={state.depth === "comprehensive"}
+                  onClick={() => setState({ ...state, depth: "comprehensive" })}
+                  label="🎯 Deep Dive — Complete Mastery"
+                  description="10–16+ modules with 5–8 in-depth chapters each (DSA, ML, System Design, GATE)."
+                />
+                <ChoiceCard
+                  selected={state.depth === "standard"}
+                  onClick={() => setState({ ...state, depth: "standard" })}
+                  label="📚 Standard — Full Semester"
+                  description="7–10 modules with 4–6 chapters per module."
+                />
+                <ChoiceCard
+                  selected={state.depth === "sprint"}
+                  onClick={() => setState({ ...state, depth: "sprint" })}
+                  label="⚡ Sprint — Crash Course"
+                  description="4–6 focused modules for urgent exam reviews."
+                />
+              </div>
+            </StepShell>
+          )}
+
+          {step === 4 && (
+            <StepShell
+              eyebrow="Step 5 of 7"
               title="How much time can you give daily?"
               subtitle="We'll size each mission to fit."
             >
@@ -245,9 +300,9 @@ function Onboarding() {
             </StepShell>
           )}
 
-          {step === 4 && (
+          {step === 5 && (
             <StepShell
-              eyebrow="Step 5 of 6"
+              eyebrow="Step 6 of 7"
               title="How do you learn best?"
               subtitle="Your roadmap adapts to your style."
             >
@@ -264,9 +319,9 @@ function Onboarding() {
             </StepShell>
           )}
 
-          {step === 5 && (
+          {step === 6 && (
             <StepShell
-              eyebrow="Step 6 of 6"
+              eyebrow="Step 7 of 7"
               title="Got a syllabus or study materials?"
               subtitle="Paste your curriculum or attach notes to ground your roadmap in exact topics (Optional)."
             >

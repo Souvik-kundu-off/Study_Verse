@@ -93,6 +93,53 @@ This document serves as the **official project ledger** tracking all implemented
   - **📚 Course Material Studio**: Drag-and-drop PDF textbook upload & RAG indexing.
   - **💬 AI Tutor Query Insights**: Anonymized log of top student AI Tutor questions.
 
+---
+
+### 📚 Phase 2.95: Adaptive Curriculum Depth & Continuous Roadmap Expansion (Completed)
+- [x] **Autonomous AI Curriculum Depth Sizing (`depth: 'auto' | 'comprehensive' | 'standard' | 'sprint'`)**:
+  - **✨ Smart Adaptive (AI-Decided)**: AI evaluates the actual academic / professional breadth of the subject and dynamically allocates as many modules (10–16+) and chapters as needed without artificial truncation.
+  - **🎯 Deep Dive Mastery**: 11–16+ comprehensive modules with 5–8 in-depth chapters each (DSA, ML, System Design).
+  - **📚 Standard**: 7–10 progressive modules with 4–6 chapters per module.
+  - **⚡ Sprint / Crash Course**: 4–6 high-yield modules for urgent exam reviews.
+- [x] **High-Density Chapter Specifications**:
+  - Replaced the superficial 1-sentence constraint with a rich **2–3 sentence technical synopsis** (mechanics, under-the-hood transitions, edge cases, and practical relevance).
+  - Expanded key concepts to **5 to 8 granular sub-concepts, algorithmic patterns, and formulas** per chapter.
+  - Scaled schema up to **24 modules** and **14 topics per module**, with a **16,384 token budget**.
+- [x] **Roadmap Concept Visualizer (`roadmap.tsx`)**:
+  - Removed single-line text truncation and enabled multi-line readable chapter descriptions.
+  - Interactive **Concept Pills** rendered under each chapter card so students see exact sub-topics at a glance.
+- [x] **Continuous Roadmap Expansion Engine (`expandRoadmap`, `addCustomModule`, `addCustomTopic`)**:
+  - **⚡ AI Deepen Track**: Automatic audit of existing modules to identify missing concept pillars and append 2–4 advanced modules.
+  - **✏️ Manual Module Builder**: Add custom chapters and topic lists directly from `/roadmap`.
+  - **➕ In-Module Topic Addition**: Add focused topics directly to individual modules via `AddTopicModal`.
+
+---
+
+### 📖 Phase 2.96: Masterclass Lesson Notes & Audio Narration Suite (Completed ✅)
+- [x] **Masterclass 10-Part Architectural Curriculum (`generateSmartNotes` in `ai.functions.ts`)**:
+  - **1. 📌 Conceptual Foundations & Intuitive Mental Model**: Core problem space, naive solution breakdown, and breakthrough insight.
+  - **2. 🔬 Under-The-Hood Architecture & Mechanical Invariants**: Memory layout, pointers, data buffers, and state invariants.
+  - **3. 📊 Visual Concept Flowchart**: Mermaid.js diagram (`flowchart TD`) with quote-wrapped node labels.
+  - **4. 🎬 Interactive Step-by-Step Simulation**: Automated 5-to-8 step JSON simulation script powering `UniversalAnimator`.
+  - **5. 💻 Production-Grade Code Walkthrough**: Complete implementations with line-by-line annotations in Python/C++/TypeScript.
+  - **6. ⚖️ Complexity & Performance Trade-Off Matrix**: Markdown tables detailing Best, Average, Worst case time, Auxiliary Space, and Cache Locality.
+  - **7. ⚠️ Critical Pitfalls & Bug Traps**: Semantic callouts for failure modes (`> ⚠️ Common Bug Trap:`, `> 💡 Pro Tip:`).
+  - **8. 🎯 Battle-Tested Problem Patterns**: Classic benchmark problem patterns with strategic blueprints.
+  - **9. 🏢 Real-World Industry Application**: Case studies of real production implementations (Linux Kernel, Redis, Postgres, Kafka).
+  - **10. 💡 Active Recall with Collapsible Reveals**: Interactive `<details><summary>` cards concealing step-by-step solutions for immediate self-testing.
+- [x] **Lesson Reader Toolbar & Audio Synthesis (`focus.$topicId.tsx`)**:
+  - **🎙️ Listen Aloud (Text-to-Speech)**: Integrated browser SpeechSynthesis reader with Play, Pause, Resume, and Stop controls for hands-free audio study.
+  - **📥 Export Markdown (`.md`)**: One-click download of the complete masterclass notes for Notion/Obsidian.
+  - **📋 Copy Full Notes**: One-click clipboard copy of the lesson guide.
+  - **🔄 Regenerate**: Force re-run of the masterclass AI note generator with updated 10-part schema.
+  - **🧭 Quick Jump Section Pill Strip**: Dynamic table of contents parsing all section headings into clickable navigation pills that smoothly scroll directly to each section anchor.
+- [x] **Typography & Interactive Formatter (`FormattedText.tsx`)**:
+  - Interactive collapsible accordions for `<details><summary>` elements.
+  - Semantic heading anchor IDs (`scroll-mt-24`) for smooth in-page navigation.
+  - Syntax-highlighted code viewer with clipboard copy and language badges.
+
+---
+
 ## ⏳ SECTION 2: UPCOMING MASTER PHASES
 
 ### 📊 Phase 3: Cognitive Telemetry & FSRS Spaced Repetition Engine (Next Master Phase)
