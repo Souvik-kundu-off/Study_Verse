@@ -40,20 +40,17 @@ export function UniversalAnimator({ data }: { data: UniversalAnimationData | str
     parsed = data;
   }
 
-  if (!parsed || !parsed.steps || parsed.steps.length === 0) {
-    return null;
-  }
-
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState(2.0); // seconds per step
 
-  const totalSteps = parsed.steps.length;
-  const currentStep = parsed.steps[currentStepIdx];
+  const steps = parsed?.steps ?? [];
+  const totalSteps = steps.length;
+  const currentStep = steps[currentStepIdx];
 
   // Auto-play timer
   useEffect(() => {
-    if (!isPlaying) return;
+    if (!isPlaying || totalSteps === 0) return;
     const interval = setInterval(() => {
       setCurrentStepIdx((prev) => {
         if (prev >= totalSteps - 1) {
@@ -66,6 +63,10 @@ export function UniversalAnimator({ data }: { data: UniversalAnimationData | str
 
     return () => clearInterval(interval);
   }, [isPlaying, totalSteps, playbackSpeed]);
+
+  if (!parsed || steps.length === 0 || !currentStep) {
+    return null;
+  }
 
   const subjectBadge = () => {
     switch (parsed?.subject) {

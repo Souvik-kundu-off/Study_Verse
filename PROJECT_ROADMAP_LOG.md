@@ -140,6 +140,25 @@ This document serves as the **official project ledger** tracking all implemented
 
 ---
 
+### 🛡️ Phase 2.97: High Severity Architecture & Telemetry Remediation (Completed ✅)
+- [x] **Telemetry Query Remediation (`admin.functions.ts` & `instructor.functions.ts`)**:
+  - Fixed PostgREST column mismatch: Replaced non-existent `score, total` selector with valid `score_percentage`.
+  - Added explicit error logging (`quizError`) instead of silent catch fallthroughs.
+  - Accurately compute real student average quiz percentage (or `0` when empty) instead of hardcoded `84` / `82` baselines.
+  - In instructor analytics, properly scoped quiz attempt calculations to students enrolled in the instructor's courses.
+- [x] **System Settings System-Wide Wiring (`settings.server.ts`, `ai.functions.ts`, `rag.server.ts`, `_authenticated/route.tsx`)**:
+  - Created high-performance server-side cached reader `getSystemSettingsServer` with automatic invalidation upon admin update.
+  - **Master AI Model (`ai_model`)**: `callAI` and `callGroq` dynamically route requests and order candidate models based on admin configuration (e.g., `gemini-1.5-pro`, `qwen-3.8-27b`, `openai/gpt-oss-120b`).
+  - **RAG Parameters (`match_threshold` & `match_count`)**: `getGroundedContext` dynamically passes configured values to `match_document_chunks` instead of hardcoding `0.1` and `4`.
+  - **Maintenance Mode Enforcement**: When `maintenance_mode` is enabled, non-admin students and instructors are gated by a dedicated maintenance barrier screen with live status polling and sign-out capabilities, while administrators maintain uninterrupted access.
+- [x] **Service-Role Fallback Hardening (`client.server.ts`)**:
+  - Refuses silent degradation in production: throws a fatal configuration error when `SUPABASE_SERVICE_ROLE_KEY` is missing in production to prevent silent empty RLS query sets.
+  - Emits loud, prominent terminal warning banners in development mode.
+- [x] **React Hook-Order Integrity (`UniversalAnimator.tsx`)**:
+  - Relocated all `useState` and `useEffect` calls above the empty/invalid JSON guard, permanently eliminating `"Rendered more hooks than during previous render"` runtime exceptions during note rendering.
+
+---
+
 ## ⏳ SECTION 2: UPCOMING MASTER PHASES
 
 ### 📊 Phase 3: Cognitive Telemetry & FSRS Spaced Repetition Engine (Next Master Phase)

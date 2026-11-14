@@ -71,10 +71,13 @@ export const getAdminTelemetry = createServerFn({ method: "GET" })
     const { count: totalSessions } = await supabase.from("study_sessions").select("*", { count: "exact", head: true });
 
     // Fetch quiz attempts for student efficacy analytics
-    const { data: quizAttempts } = await (supabase.from as any)("quiz_attempts").select("score, total");
-    let avgQuizScore = 84; // Default high efficacy baseline
+    const { data: quizAttempts, error: quizError } = await (supabase.from as any)("quiz_attempts").select("score_percentage");
+    if (quizError) {
+      console.error("[Admin Telemetry] Failed to fetch quiz attempts:", quizError.message);
+    }
+    let avgQuizScore = 0;
     if (quizAttempts && quizAttempts.length > 0) {
-      const totalScorePct = quizAttempts.reduce((acc: number, q: any) => acc + ((q.total ?? 0) > 0 ? ((q.score ?? 0) / q.total) * 100 : 80), 0);
+      const totalScorePct = quizAttempts.reduce((acc: number, q: any) => acc + (q.score_percentage ?? 0), 0);
       avgQuizScore = Math.round(totalScorePct / quizAttempts.length);
     }
 
@@ -258,6 +261,13 @@ export const updateSystemSettings = createServerFn({ method: "POST" })
 
     for (const update of updates) {
       await (supabase.from as any)("system_settings").upsert(update);
+    }
+
+    try {
+      const { invalidateSystemSettingsCache } = await import("@/lib/settings.server");
+      invalidateSystemSettingsCache();
+    } catch {
+      // Invalidation best-effort
     }
 
     return { success: true };

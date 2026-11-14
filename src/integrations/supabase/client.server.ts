@@ -41,21 +41,39 @@ function getEnvVar(name: string): string | undefined {
 
 function createSupabaseAdminClient() {
   const SUPABASE_URL = getEnvVar('SUPABASE_URL') || getEnvVar('VITE_SUPABASE_URL');
-  const SUPABASE_SERVICE_ROLE_KEY = getEnvVar('SUPABASE_SERVICE_ROLE_KEY') || getEnvVar('SUPABASE_PUBLISHABLE_KEY') || getEnvVar('VITE_SUPABASE_PUBLISHABLE_KEY');
+  const serviceKey = getEnvVar('SUPABASE_SERVICE_ROLE_KEY');
+  const anonKey = getEnvVar('SUPABASE_PUBLISHABLE_KEY') || getEnvVar('VITE_SUPABASE_PUBLISHABLE_KEY');
+  const isProd = process.env.NODE_ENV === 'production';
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    const missing = [
-      ...(!SUPABASE_URL ? ['SUPABASE_URL / VITE_SUPABASE_URL'] : []),
-      ...(!SUPABASE_SERVICE_ROLE_KEY ? ['SUPABASE_SERVICE_ROLE_KEY / VITE_SUPABASE_PUBLISHABLE_KEY'] : []),
-    ];
-    const message = `Missing Supabase environment variable(s): ${missing.join(', ')}.`;
-    console.error(`[Supabase] ${message}`);
+  if (!SUPABASE_URL) {
+    const message = 'Missing SUPABASE_URL / VITE_SUPABASE_URL environment variable.';
+    console.error(`[Supabase Admin] ${message}`);
     throw new Error(message);
   }
 
-  return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  if (!serviceKey) {
+    if (isProd) {
+      const message = '[Supabase Admin FATAL] SUPABASE_SERVICE_ROLE_KEY is missing in production! Refusing silent downgrade to publishable key to prevent empty RLS bypass queries.';
+      console.error(message);
+      throw new Error(message);
+    } else {
+      console.warn(
+        '\x1b[33m%s\x1b[0m',
+        '[Supabase Admin WARNING] SUPABASE_SERVICE_ROLE_KEY is not set in development. Falling back to publishable key. Queries targeting RLS-protected admin tables may return empty rows ([]).'
+      );
+    }
+  }
+
+  const selectedKey = serviceKey || anonKey;
+  if (!selectedKey) {
+    const message = 'Neither SUPABASE_SERVICE_ROLE_KEY nor SUPABASE_PUBLISHABLE_KEY is configured.';
+    console.error(`[Supabase Admin] ${message}`);
+    throw new Error(message);
+  }
+
+  return createClient<Database>(SUPABASE_URL, selectedKey, {
     global: {
-      fetch: createSupabaseFetch(SUPABASE_SERVICE_ROLE_KEY),
+      fetch: createSupabaseFetch(selectedKey),
     },
     auth: {
       storage: undefined,

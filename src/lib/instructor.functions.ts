@@ -37,25 +37,37 @@ export const getInstructorTelemetry = createServerFn({ method: "GET" })
       return {
         totalCourses: 0,
         totalEnrolledStudents: 0,
-        avgClassScore: 85,
+        avgClassScore: 0,
         weakConcepts: [],
       };
     }
 
     // Fetch total enrollments
-    const { data: enrollments } = await supabase
+    const { data: enrollments, error: enrollError } = await supabase
       .from("course_enrollments")
       .select("id, user_id, progress_pct, enrolled_at")
       .in("course_id", courseIds);
 
-    const totalEnrolledStudents = new Set(enrollments?.map((e) => e.user_id) ?? []).size;
+    if (enrollError) {
+      console.error("[Instructor Telemetry] Failed to fetch course enrollments:", enrollError.message);
+    }
 
-    // Fetch quiz scores for efficacy analytics
-    const { data: quizAttempts } = await (supabase.from as any)("quiz_attempts").select("score, total");
-    let avgClassScore = 82;
-    if (quizAttempts && quizAttempts.length > 0) {
-      const pctSum = quizAttempts.reduce((acc: number, q: any) => acc + ((q.total ?? 0) > 0 ? ((q.score ?? 0) / q.total) * 100 : 80), 0);
-      avgClassScore = Math.round(pctSum / quizAttempts.length);
+    const enrolledUserIds = Array.from(new Set(enrollments?.map((e) => e.user_id) ?? []));
+    const totalEnrolledStudents = enrolledUserIds.length;
+
+    // Fetch quiz scores for enrolled students
+    let avgClassScore = 0;
+    if (enrolledUserIds.length > 0) {
+      const { data: quizAttempts, error: quizError } = await (supabase.from as any)("quiz_attempts")
+        .select("score_percentage")
+        .in("user_id", enrolledUserIds);
+
+      if (quizError) {
+        console.error("[Instructor Telemetry] Failed to fetch enrolled student quiz attempts:", quizError.message);
+      } else if (quizAttempts && quizAttempts.length > 0) {
+        const pctSum = quizAttempts.reduce((acc: number, q: any) => acc + (q.score_percentage ?? 0), 0);
+        avgClassScore = Math.round(pctSum / quizAttempts.length);
+      }
     }
 
     // Weak concept heatmap highlights

@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import { getSystemSettingsServer } from "@/lib/settings.server";
 
 const API_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -108,11 +109,15 @@ export async function getGroundedContext(
   query: string
 ): Promise<string> {
   try {
+    const settings = await getSystemSettingsServer();
+    const matchThreshold = settings.matchThreshold ?? 0.2;
+    const matchCount = settings.matchCount ?? 4;
+
     const queryEmb = generateFallbackEmbedding(query);
     const { data, error } = await supabase.rpc("match_document_chunks", {
       query_embedding: JSON.stringify(queryEmb),
-      match_threshold: 0.1,
-      match_count: 4,
+      match_threshold: matchThreshold,
+      match_count: matchCount,
       p_user_id: userId,
       p_topic_id: topicId,
     });

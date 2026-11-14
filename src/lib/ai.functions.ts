@@ -87,14 +87,26 @@ type RoadmapAI = {
 async function callGroq(
   messages: Array<{ role: string; content: string }>,
   apiKey: string,
-  options?: { maxTokens?: number; jsonMode?: boolean }
+  options?: { maxTokens?: number; jsonMode?: boolean; preferredModel?: string }
 ): Promise<string> {
-  const candidates = [
+  const baseCandidates = [
     "openai/gpt-oss-120b",
     "openai/gpt-oss-20b",
     "qwen/qwen3.8-27b",
     "qwen/qwen3.6-27b",
   ];
+
+  let candidates = [...baseCandidates];
+  if (options?.preferredModel) {
+    const pref = options.preferredModel.toLowerCase();
+    if (pref.includes("qwen")) {
+      candidates = ["qwen/qwen3.8-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"];
+    } else if (pref.includes("120b")) {
+      candidates = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b", "qwen/qwen3.6-27b"];
+    } else if (pref.includes("20b")) {
+      candidates = ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3.8-27b", "qwen/qwen3.6-27b"];
+    }
+  }
 
   let lastErr = "";
   for (const model of candidates) {
@@ -390,30 +402,56 @@ function extractRoadmapData(parsed: any): {
 
 /**
  * Universal AI Caller for roadmaps, quizzes, flashcards, notes, etc.
- * Primary: Groq
- * Fallback: Google Gemini
+ * Dynamically respects system_settings (ai_model and maintenance_mode).
  */
 async function callAI(
   messages: Array<{ role: string; content: string }>,
-  options?: { maxTokens?: number; jsonMode?: boolean }
+  options?: { maxTokens?: number; jsonMode?: boolean; isAdmin?: boolean }
 ): Promise<string> {
   const groqKey = process.env.GROQ_API_KEY;
   const geminiKey = process.env.GEMINI_API_KEY;
 
-  const errors: string[] = [];
+  let preferredModel = "openai/gpt-oss-120b";
+  try {
+    const { getSystemSettingsServer } = await import("@/lib/settings.server");
+    const settings = await getSystemSettingsServer();
+    if (settings.maintenanceMode && !options?.isAdmin) {
+      throw new Error("StudyVerse is currently under maintenance. AI generation is temporarily paused.");
+    }
+    if (settings.aiModel) {
+      preferredModel = settings.aiModel;
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("maintenance")) {
+      throw err;
+    }
+  }
 
-  // 1. Primary: Groq
+  const errors: string[] = [];
+  const preferGemini = preferredModel.toLowerCase().includes("gemini");
+
+  // If Admin prefers Gemini as master model, route to Gemini first
+  if (preferGemini && geminiKey) {
+    try {
+      return await callGemini(messages, geminiKey);
+    } catch (err) {
+      console.warn("Preferred Gemini failed in callAI, trying Groq fallback:", err);
+      errors.push(`Gemini: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // 1. Primary or Fallback: Groq (with preferred model candidate)
   if (groqKey) {
     try {
-      return await callGroq(messages, groqKey, options);
+      return await callGroq(messages, groqKey, { ...options, preferredModel });
     } catch (err) {
       console.warn("Groq failed in callAI, falling back to Gemini:", err);
       errors.push(`Groq: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
-  // 2. Fallback: Google Gemini
-  if (geminiKey) {
+  // 2. Secondary Fallback: Google Gemini (if not already attempted)
+  if (!preferGemini && geminiKey) {
     try {
       return await callGemini(messages, geminiKey);
     } catch (err) {
@@ -434,7 +472,22 @@ async function callAI(
  * Primary: Google Gemini
  * Fallback: Groq
  */
-async function callTutor(messages: Array<{ role: string; content: string }>): Promise<string> {
+async function callTutor(
+  messages: Array<{ role: string; content: string }>,
+  options?: { isAdmin?: boolean }
+): Promise<string> {
+  try {
+    const { getSystemSettingsServer } = await import("@/lib/settings.server");
+    const settings = await getSystemSettingsServer();
+    if (settings.maintenanceMode && !options?.isAdmin) {
+      throw new Error("StudyVerse is currently under maintenance. AI Tutor is temporarily paused.");
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("maintenance")) {
+      throw err;
+    }
+  }
+
   const geminiKey = process.env.GEMINI_API_KEY;
   const groqKey = process.env.GROQ_API_KEY;
 

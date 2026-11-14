@@ -1,7 +1,7 @@
 import { createFileRoute, redirect, Outlet, Link, useRouter, useNavigate } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useState } from "react";
-import { GraduationCap, LayoutDashboard, Target, BookOpen, ShieldCheck, Menu, Activity, Users, Bot, Settings } from "lucide-react";
+import { GraduationCap, LayoutDashboard, Target, BookOpen, ShieldCheck, Menu, Activity, Users, Bot, Settings, Wrench, RefreshCw, LogOut } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { UserNavMenu } from "@/components/ui/UserNavMenu";
 import { ProfileSettingsModal } from "@/components/ui/ProfileSettingsModal";
@@ -82,6 +82,19 @@ function AuthedShell() {
     },
   });
 
+  // System Settings Maintenance Mode query
+  const { data: maintenanceMode } = useQuery({
+    queryKey: ["system-settings-maintenance"],
+    queryFn: async () => {
+      const { data } = await (supabase.from as any)("system_settings")
+        .select("value")
+        .eq("key", "maintenance_mode")
+        .maybeSingle();
+      return data?.value === "true";
+    },
+    staleTime: 30000,
+  });
+
   // Redirect admins to /admin, instructors to /teacher, and students to onboarding/dashboard
   const pathname = router.state.location.pathname;
   const pendingPathname = router.state.resolvedLocation?.pathname;
@@ -132,6 +145,42 @@ function AuthedShell() {
   const hideChrome = pathname.startsWith("/focus") || pathname === "/onboarding";
 
   if (routing) return null;
+
+  // Enforce system maintenance mode for non-admin users
+  if (maintenanceMode && profile && profile.role !== "admin") {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center text-white font-sans">
+        <div className="max-w-md w-full rounded-3xl border border-slate-800 bg-slate-900/90 p-8 shadow-2xl backdrop-blur-xl space-y-6">
+          <div className="mx-auto w-16 h-16 rounded-2xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+            <Wrench className="w-8 h-8 animate-pulse" />
+          </div>
+          <div className="space-y-2">
+            <span className="text-[11px] font-extrabold uppercase tracking-widest text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">
+              System Maintenance Active
+            </span>
+            <h1 className="text-xl font-bold text-white pt-2">StudyVerse Under Maintenance</h1>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              We are currently performing platform upgrades and database optimizations. Student learning tracks and tutor sessions are temporarily paused.
+            </p>
+          </div>
+          <div className="pt-2 flex flex-col sm:flex-row gap-3">
+            <button
+              onClick={() => window.location.reload()}
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2.5 text-xs font-semibold text-white transition cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> Check Status
+            </button>
+            <button
+              onClick={signOut}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-800 hover:bg-slate-700 px-4 py-2.5 text-xs font-semibold text-slate-300 transition cursor-pointer"
+            >
+              <LogOut className="w-3.5 h-3.5" /> Sign Out
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (hideChrome) return <Outlet />;
 
