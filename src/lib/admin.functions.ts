@@ -137,7 +137,6 @@ export const getAdminTelemetry = createServerFn({ method: "GET" })
         avgQuizScore,
         totalMinutes,
         totalTopicsCompleted,
-        efficacyHelpRate: 88, // Student satisfaction & recall retention rate %
       },
     };
   });

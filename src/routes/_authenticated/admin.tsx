@@ -349,16 +349,13 @@ function AdminConsolePage() {
                 </h3>
                 <p className="text-xs text-ink-muted">Real-time analytics monitoring whether students are actively learning, retaining knowledge, and being helped.</p>
               </div>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-600 border border-emerald-500/30">
-                EFFICACY STATUS: HIGH 🟢
-              </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
               <div className="rounded-xl border border-border bg-background p-4 space-y-1">
                 <span className="text-xs font-semibold text-ink-muted">Average Quiz Accuracy Rate</span>
                 <p className="font-display text-2xl text-emerald-600 dark:text-emerald-400">
-                  {telemetry?.studentEfficacy?.avgQuizScore ?? 84}%
+                  {telemetry ? `${telemetry.studentEfficacy.avgQuizScore}%` : "—"}
                 </p>
                 <p className="text-[11px] text-ink-subtle">Student mastery score across completed quizzes</p>
               </div>
@@ -369,14 +366,6 @@ function AdminConsolePage() {
                   {Math.round((telemetry?.studentEfficacy?.totalMinutes ?? 0) / 60)} hrs
                 </p>
                 <p className="text-[11px] text-ink-subtle">Logged focus time across all subject tracks</p>
-              </div>
-
-              <div className="rounded-xl border border-border bg-background p-4 space-y-1">
-                <span className="text-xs font-semibold text-ink-muted">AI Tutor Helpfulness Index</span>
-                <p className="font-display text-2xl text-purple-600 dark:text-purple-400">
-                  {telemetry?.studentEfficacy?.efficacyHelpRate ?? 88}%
-                </p>
-                <p className="text-[11px] text-ink-subtle">Student recall strength & positive tutor resolution</p>
               </div>
             </div>
           </div>
