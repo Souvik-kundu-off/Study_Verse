@@ -13,7 +13,8 @@
     "preview": "cross-env NODE_OPTIONS=--experimental-require-module vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "supabase:keepalive": "node scripts/keep-supabase-alive.mjs"
+    "supabase:keepalive": "node scripts/keep-supabase-alive.mjs",
+    "types": "node scripts/generate-db-types.mjs && prettier --write src/integrations/supabase/types.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

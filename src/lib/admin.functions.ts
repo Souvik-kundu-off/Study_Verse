@@ -103,17 +103,21 @@ export const getAdminTelemetry = createServerFn({ method: "GET" })
     // Fetch course & enrollment counts
     const { count: totalCourses } = await supabase.from("courses").select("*", { count: "exact", head: true });
     const { count: totalEnrollments } = await supabase.from("course_enrollments").select("*", { count: "exact", head: true });
-    const { count: totalVectorChunks } = await (supabase.from as any)("document_chunks").select("*", { count: "exact", head: true });
+    const { count: totalVectorChunks } = await supabase
+      .from("document_chunks")
+      .select("*", { count: "exact", head: true });
     const { count: totalSessions } = await supabase.from("study_sessions").select("*", { count: "exact", head: true });
 
     // Fetch quiz attempts for student efficacy analytics
-    const { data: quizAttempts, error: quizError } = await (supabase.from as any)("quiz_attempts").select("score_percentage");
+    const { data: quizAttempts, error: quizError } = await supabase
+      .from("quiz_attempts")
+      .select("score_percentage");
     if (quizError) {
       console.error("[Admin Telemetry] Failed to fetch quiz attempts:", quizError.message);
     }
     let avgQuizScore = 0;
     if (quizAttempts && quizAttempts.length > 0) {
-      const totalScorePct = quizAttempts.reduce((acc: number, q: any) => acc + (q.score_percentage ?? 0), 0);
+      const totalScorePct = quizAttempts.reduce((acc, q) => acc + (q.score_percentage ?? 0), 0);
       avgQuizScore = Math.round(totalScorePct / quizAttempts.length);
     }
 
@@ -371,7 +375,8 @@ export const purgeOrphanedVectorChunks = createServerFn({ method: "POST" })
 
     const adminDb = getAdminSupabase();
 
-    const { error, count } = await (adminDb.from as any)("document_chunks")
+    const { error, count } = await adminDb
+      .from("document_chunks")
       .delete({ count: "exact" })
       .is("goal_id", null)
       .is("course_id", null);

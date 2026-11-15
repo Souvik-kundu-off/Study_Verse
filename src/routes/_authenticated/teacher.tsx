@@ -653,7 +653,12 @@ function TeacherWorkspacePage() {
                     {isOwner ? (
                       <div className="flex items-center gap-1.5">
                         <button
-                          onClick={() => togglePauseMutation.mutate({ courseId: course.id, currentStatus: course.status })}
+                          onClick={() =>
+                            togglePauseMutation.mutate({
+                              courseId: course.id,
+                              currentStatus: course.status ?? "published",
+                            })
+                          }
                           title={course.status === "published" ? "Pause Course" : "Publish Course"}
                           className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface hover:bg-surface-strong px-2.5 py-1 text-xs font-medium text-ink transition"
                         >

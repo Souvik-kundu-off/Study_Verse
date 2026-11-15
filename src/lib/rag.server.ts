@@ -63,13 +63,14 @@ export const ingestDocument = createServerFn({ method: "POST" })
     const rawChunks = chunkText(data.rawText);
 
     // Fetch existing chunk content hashes to deduplicate & save database storage
-    const { data: existingDocs } = await (context.supabase.from as any)("document_chunks")
+    const { data: existingDocs } = await context.supabase
+      .from("document_chunks")
       .select("content")
       .eq("user_id", userId)
       .eq("document_name", data.documentName)
       .limit(200);
 
-    const existingSet = new Set(existingDocs?.map((d: any) => d.content) ?? []);
+    const existingSet = new Set(existingDocs?.map((d) => d.content) ?? []);
 
     // Filter out chunks that are already stored in the vector database
     const uniqueChunks = rawChunks.filter((chunk) => !existingSet.has(chunk));
@@ -95,7 +96,7 @@ export const ingestDocument = createServerFn({ method: "POST" })
     });
 
     // Insert unique chunks into document_chunks
-    const { error } = await context.supabase.from("document_chunks" as any).insert(records as any);
+    const { error } = await context.supabase.from("document_chunks").insert(records);
     if (error) throw new Error(`Failed to ingest document: ${error.message}`);
 
     return { success: true, chunksIngested: records.length, deduplicated: false };

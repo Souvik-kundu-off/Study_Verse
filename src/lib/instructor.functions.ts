@@ -164,7 +164,8 @@ export const getAITutorInsights = createServerFn({ method: "GET" })
     await requireInstructorOrAdminRole(supabase, userId);
 
     // Fetch real AI tutor student query logs from database
-    const { data: logs } = await (supabase.from as any)("ai_tutor_logs")
+    const { data: logs } = await supabase
+      .from("ai_tutor_logs")
       .select("id, user_question, topic_id, created_at, roadmap_topics(title)")
       .order("created_at", { ascending: false })
       .limit(50);
@@ -173,7 +174,7 @@ export const getAITutorInsights = createServerFn({ method: "GET" })
       return [];
     }
 
-    return logs.map((l: any) => ({
+    return logs.map((l) => ({
       question: l.user_question,
       topic: l.roadmap_topics?.title ?? "General Subject Topic",
       frequencyCount: 1,
