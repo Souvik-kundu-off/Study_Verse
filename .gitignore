@@ -56,3 +56,9 @@ Thumbs.db
 
 # Antigravity / Gemini Agent Directories
 .gemini/
+
+# Supabase CLI & temp files
+supabase/.temp/
+cli-latest
+**/cli-latest
+
