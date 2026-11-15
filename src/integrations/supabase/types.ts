@@ -227,6 +227,8 @@ export type Database = {
           bio: string | null
           portfolio_url: string | null
           is_verified_instructor: boolean | null
+          preferred_learning_style: string | null
+          target_exam: string | null
         }
         Insert: {
           avatar_url?: string | null
@@ -243,6 +245,8 @@ export type Database = {
           bio?: string | null
           portfolio_url?: string | null
           is_verified_instructor?: boolean | null
+          preferred_learning_style?: string | null
+          target_exam?: string | null
         }
         Update: {
           avatar_url?: string | null
@@ -259,6 +263,38 @@ export type Database = {
           bio?: string | null
           portfolio_url?: string | null
           is_verified_instructor?: boolean | null
+          preferred_learning_style?: string | null
+          target_exam?: string | null
+        }
+        Relationships: []
+      }
+      admin_audit_log: {
+        Row: {
+          id: string
+          actor_id: string | null
+          actor_email: string | null
+          action: string
+          target_user_id: string | null
+          details: Json
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          actor_id?: string | null
+          actor_email?: string | null
+          action: string
+          target_user_id?: string | null
+          details?: Json
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          actor_id?: string | null
+          actor_email?: string | null
+          action?: string
+          target_user_id?: string | null
+          details?: Json
+          created_at?: string
         }
         Relationships: []
       }

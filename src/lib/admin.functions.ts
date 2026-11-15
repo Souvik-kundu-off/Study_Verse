@@ -48,6 +48,42 @@ async function requireAdminRole(supabase: any, userId: string) {
   }
 }
 
+/**
+ * Best-effort audit trail for privileged changes. Never throws: a failed audit
+ * write must not roll back or mask the operation the administrator requested.
+ */
+async function recordAdminAudit(
+  adminDb: any,
+  entry: {
+    actorId: string;
+    action: "role_changed" | "instructor_verification_changed";
+    targetUserId?: string;
+    details?: Record<string, unknown>;
+  },
+): Promise<void> {
+  try {
+    let actorEmail: string | null = null;
+    try {
+      const { data } = await adminDb.auth.admin.getUserById(entry.actorId);
+      actorEmail = data?.user?.email ?? null;
+    } catch {
+      /* Email is informational only */
+    }
+
+    const { error } = await adminDb.from("admin_audit_log").insert({
+      actor_id: entry.actorId,
+      actor_email: actorEmail,
+      action: entry.action,
+      target_user_id: entry.targetUserId ?? null,
+      details: entry.details ?? {},
+    });
+
+    if (error) console.warn("[Admin] Failed to write audit log entry:", error.message);
+  } catch (err) {
+    console.warn("[Admin] Audit log error:", err instanceof Error ? err.message : err);
+  }
+}
+
 export const getAdminTelemetry = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -144,8 +180,41 @@ export const updateUserRole = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     await requireAdminRole(supabase, userId);
 
+    // An administrator can never change their own role — that is the shortest
+    // path to locking everyone out of the console.
+    if (data.targetUserId === userId) {
+      throw new Error("You cannot change your own role. Ask another administrator to do it.");
+    }
+
     // Use service-role client to bypass RLS (admin verified above)
     const adminDb = getAdminSupabase();
+
+    const { data: target, error: targetError } = await adminDb
+      .from("profiles")
+      .select("id, role")
+      .eq("id", data.targetUserId)
+      .maybeSingle();
+
+    if (targetError) throw new Error(targetError.message);
+    if (!target) throw new Error("Target user not found.");
+
+    const previousRole = target.role ?? "student";
+    if (previousRole === data.role) {
+      return { success: true, targetUserId: data.targetUserId, role: data.role, unchanged: true };
+    }
+
+    // Refuse to demote the final administrator.
+    if (previousRole === "admin" && data.role !== "admin") {
+      const { count, error: countError } = await adminDb
+        .from("profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("role", "admin");
+
+      if (countError) throw new Error(countError.message);
+      if ((count ?? 0) <= 1) {
+        throw new Error("Cannot remove the last platform administrator.");
+      }
+    }
 
     const { error } = await adminDb
       .from("profiles")
@@ -153,6 +222,14 @@ export const updateUserRole = createServerFn({ method: "POST" })
       .eq("id", data.targetUserId);
 
     if (error) throw new Error(error.message);
+
+    await recordAdminAudit(adminDb, {
+      actorId: userId,
+      action: "role_changed",
+      targetUserId: data.targetUserId,
+      details: { from: previousRole, to: data.role },
+    });
+
     return { success: true, targetUserId: data.targetUserId, role: data.role };
   });
 
@@ -170,12 +247,25 @@ export const verifyInstructor = createServerFn({ method: "POST" })
 
     const adminDb = getAdminSupabase();
 
+    const { data: target } = await adminDb
+      .from("profiles")
+      .select("is_verified_instructor")
+      .eq("id", data.targetUserId)
+      .maybeSingle();
+
     const { error } = await adminDb
       .from("profiles")
       .update({ is_verified_instructor: data.isVerified })
       .eq("id", data.targetUserId);
 
     if (error) throw new Error(error.message);
+
+    await recordAdminAudit(adminDb, {
+      actorId: userId,
+      action: "instructor_verification_changed",
+      targetUserId: data.targetUserId,
+      details: { from: target?.is_verified_instructor ?? false, to: data.isVerified },
+    });
 
     // Broadcast automated notification to teacher
     try {
@@ -288,4 +378,21 @@ export const purgeOrphanedVectorChunks = createServerFn({ method: "POST" })
 
     if (error) throw new Error(error.message);
     return { success: true, purgedCount: count ?? 0 };
+  });
+
+export const getAdminAuditLog = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    await requireAdminRole(supabase, userId);
+
+    // Read through the caller's client so the admin-only SELECT policy applies.
+    const { data, error } = await supabase
+      .from("admin_audit_log")
+      .select("id, actor_id, actor_email, action, target_user_id, details, created_at")
+      .order("created_at", { ascending: false })
+      .limit(100);
+
+    if (error) throw new Error(error.message);
+    return data ?? [];
   });

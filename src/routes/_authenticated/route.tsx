@@ -44,10 +44,11 @@ export const Route = createFileRoute("/_authenticated")({
         data.user.email?.split("@")[0] ??
         "Learner";
 
+      // `role` is intentionally omitted: the column default is 'student', and
+      // clients are no longer granted the privilege to write it.
       await supabase.from("profiles").upsert({
         id: uid,
         full_name: displayName,
-        role: "student",
         onboarding_complete: false,
       });
 

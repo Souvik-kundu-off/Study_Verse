@@ -264,7 +264,7 @@ function TeacherWorkspacePage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["teacherRoleCheck"] });
-      toast.success("Instructor credentials & verification details updated!");
+      toast.success("Credentials submitted for review. An administrator will verify your educator status.");
     },
     onError: (err: Error) => toast.error(err.message),
   });

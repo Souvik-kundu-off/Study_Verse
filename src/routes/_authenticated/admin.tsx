@@ -10,7 +10,8 @@ import {
   toggleCourseStatus,
   getSystemSettings,
   updateSystemSettings,
-  purgeOrphanedVectorChunks
+  purgeOrphanedVectorChunks,
+  getAdminAuditLog,
 } from "@/lib/admin.functions";
 import { deleteCourse } from "@/lib/courses.functions";
 import { supabase } from "@/integrations/supabase/client";
@@ -37,7 +38,8 @@ import {
   Check,
   X,
   ExternalLink,
-  Building2
+  Building2,
+  ScrollText
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -45,7 +47,9 @@ import { z } from "zod";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   validateSearch: z.object({
-    tab: z.enum(["telemetry", "users", "courses", "verifications", "ai", "maintenance"]).optional(),
+    tab: z
+      .enum(["telemetry", "users", "courses", "verifications", "audit", "ai", "maintenance"])
+      .optional(),
   }).optional(),
   head: () => ({
     meta: [
@@ -112,16 +116,28 @@ function AdminConsolePage() {
     queryFn: () => getSystemSettings(),
   });
 
+  // Audit Trail Query
+  const { data: auditLog = [], isLoading: isAuditLoading } = useQuery({
+    enabled: isAdmin && activeTab === "audit",
+    queryKey: ["adminAuditLog"],
+    queryFn: () => getAdminAuditLog(),
+  });
+
   // Role Update Mutation
   const roleMutation = useMutation({
     mutationFn: ({ targetUserId, role }: { targetUserId: string; role: "student" | "instructor" | "admin" }) =>
       updateUserRole({ data: { targetUserId, role } }),
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.refetchQueries({ queryKey: ["adminUsers"] });
       queryClient.invalidateQueries({ queryKey: ["adminTelemetry"] });
-      toast.success("User role updated successfully");
+      queryClient.invalidateQueries({ queryKey: ["adminAuditLog"] });
+      toast.success(result?.unchanged ? "Role already set — nothing to change." : "User role updated successfully");
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => {
+      // Re-sync the table so the select snaps back to the stored role.
+      queryClient.refetchQueries({ queryKey: ["adminUsers"] });
+      toast.error(err.message);
+    },
   });
 
   // Verify Instructor Mutation (with instant optimistic UI update)
@@ -136,6 +152,7 @@ function AdminConsolePage() {
     onSuccess: (_, variables) => {
       queryClient.refetchQueries({ queryKey: ["adminUsers"] });
       queryClient.invalidateQueries({ queryKey: ["adminTelemetry"] });
+      queryClient.invalidateQueries({ queryKey: ["adminAuditLog"] });
       toast.success(variables.isVerified ? "Teacher credential badge approved! 🎉" : "Teacher verification status updated.");
     },
     onError: (err: Error) => {
@@ -367,7 +384,10 @@ function AdminConsolePage() {
       )}
 
       {/* TAB 2 & 3: MANAGEMENT (USER DIRECTORY / COURSE MODERATION / TEACHER VERIFICATIONS) */}
-      {(activeTab === "users" || activeTab === "courses" || activeTab === "verifications") && (
+      {(activeTab === "users" ||
+        activeTab === "courses" ||
+        activeTab === "verifications" ||
+        activeTab === "audit") && (
         <div className="space-y-6">
           {/* Sub-view selector */}
           <div className="flex items-center gap-2 border-b border-border pb-3 overflow-x-auto">
@@ -400,6 +420,16 @@ function AdminConsolePage() {
               }`}
             >
               Teacher Verifications ({teacherApplications.filter((t) => !(t as any).is_verified_instructor).length} Pending)
+            </button>
+            <button
+              onClick={() => navigate({ to: "/admin", search: { tab: "audit" } })}
+              className={`rounded-xl px-4 py-2 text-xs font-extrabold transition cursor-pointer whitespace-nowrap ${
+                activeTab === "audit"
+                  ? "bg-blue-600 text-white shadow-2xs"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+              }`}
+            >
+              Audit Trail
             </button>
           </div>
 
@@ -524,6 +554,76 @@ function AdminConsolePage() {
             </div>
           )}
 
+          {activeTab === "audit" && (
+            <div className="space-y-4">
+              <div className="border-b border-border pb-3">
+                <h3 className="font-display text-lg font-extrabold text-slate-900 flex items-center gap-2">
+                  <ScrollText className="w-5 h-5 text-blue-600" /> Privileged Change Audit Trail
+                </h3>
+                <p className="text-xs text-slate-600 mt-1">
+                  Every role change and instructor verification decision, most recent first. Entries are append-only and cannot be edited from the console.
+                </p>
+              </div>
+
+              {isAuditLoading ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500 text-xs font-medium">
+                  Loading audit entries…
+                </div>
+              ) : auditLog.length === 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500 text-xs font-medium">
+                  No privileged changes recorded yet.
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-2xs">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 text-[10px] uppercase tracking-wider font-extrabold text-slate-600">
+                      <tr>
+                        <th className="p-3">When</th>
+                        <th className="p-3">Action</th>
+                        <th className="p-3">Administrator</th>
+                        <th className="p-3">Target</th>
+                        <th className="p-3">Change</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {auditLog.map((entry) => {
+                        const details = (entry.details ?? {}) as Record<string, unknown>;
+                        return (
+                          <tr key={entry.id} className="hover:bg-slate-50/70">
+                            <td className="p-3 whitespace-nowrap text-slate-600 font-medium">
+                              {new Date(entry.created_at).toLocaleString()}
+                            </td>
+                            <td className="p-3">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase whitespace-nowrap ${
+                                  entry.action === "role_changed"
+                                    ? "bg-blue-100 text-blue-800"
+                                    : "bg-violet-100 text-violet-800"
+                                }`}
+                              >
+                                {entry.action === "role_changed" ? "Role" : "Verification"}
+                              </span>
+                            </td>
+                            <td className="p-3 text-slate-700 font-medium">
+                              {entry.actor_email ??
+                                (entry.actor_id ? `${String(entry.actor_id).slice(0, 8)}…` : "system")}
+                            </td>
+                            <td className="p-3 text-slate-700 font-mono">
+                              {entry.target_user_id ? `${String(entry.target_user_id).slice(0, 8)}…` : "—"}
+                            </td>
+                            <td className="p-3 text-slate-800 font-bold whitespace-nowrap">
+                              {String(details.from ?? "—")} → {String(details.to ?? "—")}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === "users" && (
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-4">
@@ -606,8 +706,13 @@ function AdminConsolePage() {
                                     role: e.target.value as "student" | "instructor" | "admin",
                                   })
                                 }
-                                disabled={roleMutation.isPending}
-                                className="rounded-lg border border-border bg-background px-2.5 py-1 text-xs text-ink focus:outline-none"
+                                disabled={roleMutation.isPending || u.id === profile?.id}
+                                title={
+                                  u.id === profile?.id
+                                    ? "You cannot change your own role. Ask another administrator."
+                                    : undefined
+                                }
+                                className="rounded-lg border border-border bg-background px-2.5 py-1 text-xs text-ink focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 <option value="student">Student</option>
                                 <option value="instructor">Instructor</option>

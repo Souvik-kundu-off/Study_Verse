@@ -431,24 +431,6 @@ export const getCoursesCatalog = createServerFn({ method: "GET" })
     }));
   });
 
-const updateRoleInput = z.object({
-  role: z.enum(["student", "instructor", "admin"]),
-});
-
-export const updateUserRole = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .validator((input: unknown) => updateRoleInput.parse(input))
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    const { error } = await supabase
-      .from("profiles")
-      .update({ role: data.role })
-      .eq("id", userId);
-
-    if (error) throw new Error(error.message);
-    return { role: data.role };
-  });
-
 const instructorProfileInput = z.object({
   institutionName: z.string().optional(),
   academicTitle: z.string().optional(),
@@ -463,21 +445,43 @@ export const updateInstructorProfile = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
-    const updates: Record<string, any> = {
-      is_verified_instructor: true,
-    };
-    if (data.institutionName) updates.institution_name = data.institutionName;
-    if (data.academicTitle) updates.academic_title = data.academicTitle;
-    if (data.specialization) updates.specialization = data.specialization;
-    if (data.experienceYears) updates.teaching_experience_years = data.experienceYears;
-    if (data.bio) updates.bio = data.bio;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", userId)
+      .maybeSingle();
 
-    const { error } = await (supabase.from as any)("profiles")
+    const role = profile?.role ?? "student";
+    if (role !== "instructor" && role !== "admin") {
+      throw new Error("Only instructor accounts can submit educator credentials.");
+    }
+
+    // Credentials are submitted for review — verification is admin-only.
+    // `is_verified_instructor` is never written here.
+    const updates: {
+      institution_name?: string;
+      academic_title?: string;
+      specialization?: string;
+      teaching_experience_years?: number;
+      bio?: string;
+    } = {};
+    if (data.institutionName !== undefined) updates.institution_name = data.institutionName;
+    if (data.academicTitle !== undefined) updates.academic_title = data.academicTitle;
+    if (data.specialization !== undefined) updates.specialization = data.specialization;
+    if (data.experienceYears !== undefined) updates.teaching_experience_years = data.experienceYears;
+    if (data.bio !== undefined) updates.bio = data.bio;
+
+    if (Object.keys(updates).length === 0) {
+      return { success: true, pendingReview: true, updated: 0 };
+    }
+
+    const { error } = await supabase
+      .from("profiles")
       .update(updates)
       .eq("id", userId);
 
     if (error) throw new Error(error.message);
-    return { success: true };
+    return { success: true, pendingReview: true, updated: Object.keys(updates).length };
   });
 
 const unenrollInput = z.object({
