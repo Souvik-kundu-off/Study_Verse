@@ -15,6 +15,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Plus, Loader2, Upload, BookOpen, Sun, Moon, Sunrise, Sunset, Zap, Library, GraduationCap, Sparkles } from "lucide-react";
+import {
+  findBinaryContentReason,
+  isPlainTextFile,
+  unsupportedFileMessage,
+} from "@/lib/text-guard";
 
 interface CreateTrackModalProps {
   open: boolean;
@@ -79,50 +84,37 @@ export function CreateTrackModal({ open, onOpenChange, onSuccess }: CreateTrackM
   };
 
   const [fileFileName, setFileFileName] = useState<string | null>(null);
-  const [extractingOcr, setExtractingOcr] = useState(false);
   const [confirmedSyllabus, setConfirmedSyllabus] = useState(false);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setFileFileName(file.name);
-
-    if (file.type.startsWith("image/")) {
-      setExtractingOcr(true);
-      toast.info(`Extracting syllabus text from image '${file.name}' via Vision OCR...`);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const textData = event.target?.result as string;
-        // Simulate OCR text extraction for image files
-        setTimeout(() => {
-          const extractedText = `[Syllabus extracted from photo: ${file.name}]\n1. Core Definitions & Principles\n2. Key Formulas & Derivations\n3. Practical Problem Solving & Applications\n4. Advanced Exam & Interview Topics`;
-          setSyllabusText(extractedText);
-          setConfirmedSyllabus(true);
-          setExtractingOcr(false);
-          toast.success("Successfully extracted syllabus text from image! Review & confirm below.");
-        }, 1200);
-      };
-      reader.readAsDataURL(file);
-    } else if (file.type === "text/plain" || file.name.endsWith(".txt") || file.name.endsWith(".md")) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const text = event.target?.result as string;
-        setSyllabusText(text);
-        setConfirmedSyllabus(true);
-        toast.success(`Loaded syllabus content from ${file.name}`);
-      };
-      reader.readAsText(file);
-    } else {
-      setExtractingOcr(true);
-      toast.info(`Reading syllabus document '${file.name}'...`);
-      setTimeout(() => {
-        setSyllabusText(`[Document: ${file.name}]\n- Chapter 1: Foundations & Core Concepts\n- Chapter 2: Methods & Analytical Approaches\n- Chapter 3: Advanced Topics & Exam Mastery`);
-        setConfirmedSyllabus(true);
-        setExtractingOcr(false);
-        toast.success(`Loaded topics from ${file.name}`);
-      }, 1000);
+    // Only real text is accepted. There is no OCR or document parser here, so
+    // anything else would have to be invented — refuse it instead.
+    if (!isPlainTextFile({ name: file.name, type: file.type })) {
+      toast.error(unsupportedFileMessage(file.name));
+      e.target.value = "";
+      return;
     }
+
+    const reader = new FileReader();
+    reader.onerror = () => toast.error(`Could not read ${file.name}.`);
+    reader.onload = (event) => {
+      const text = (event.target?.result as string) || "";
+      const binaryReason = findBinaryContentReason(text);
+      if (binaryReason) {
+        toast.error(`${file.name}: ${binaryReason}.`);
+        return;
+      }
+      setFileFileName(file.name);
+      setSyllabusText(text);
+      setConfirmedSyllabus(true);
+      toast.success(`Loaded syllabus content from ${file.name}`);
+    };
+    reader.readAsText(file);
+
+    e.target.value = "";
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -322,10 +314,10 @@ export function CreateTrackModal({ open, onOpenChange, onSuccess }: CreateTrackM
                 </Label>
                 <label className="cursor-pointer text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-semibold">
                   <Upload className="w-3.5 h-3.5" />
-                  Attach Image / PDF / Notes
+                  Attach Notes (.txt, .md)
                   <input
                     type="file"
-                    accept="image/*,.pdf,.txt,.md,.doc,.docx"
+                    accept=".txt,.md"
                     onChange={handleFileUpload}
                     className="hidden"
                   />
@@ -337,22 +329,18 @@ export function CreateTrackModal({ open, onOpenChange, onSuccess }: CreateTrackM
                   <span className="truncate font-medium text-indigo-900 dark:text-indigo-300">
                     📎 File: {fileFileName}
                   </span>
-                  {extractingOcr ? (
-                    <span className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400 animate-pulse">
-                      <Loader2 className="w-3 h-3 animate-spin" /> Extracting Text via OCR...
-                    </span>
-                  ) : confirmedSyllabus ? (
+                  {confirmedSyllabus && (
                     <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-                      ✓ Text Extracted & Confirmed
+                      ✓ Loaded
                     </span>
-                  ) : null}
+                  )}
                 </div>
               )}
 
               <Textarea
                 id="syllabusText"
                 rows={4}
-                placeholder="Paste course syllabus, chapters, textbook photo OCR text, or table of contents here..."
+                placeholder="Paste course syllabus, chapters, or table of contents here..."
                 value={syllabusText}
                 onChange={(e) => {
                   setSyllabusText(e.target.value);

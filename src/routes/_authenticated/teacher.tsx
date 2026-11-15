@@ -9,6 +9,11 @@ import {
 } from "@/lib/instructor.functions";
 import { createCourse, updateCourse, updateInstructorProfile, deleteCourse } from "@/lib/courses.functions";
 import { ingestDocument } from "@/lib/rag.server";
+import {
+  findBinaryContentReason,
+  isPlainTextFile,
+  unsupportedFileMessage,
+} from "@/lib/text-guard";
 import { supabase } from "@/integrations/supabase/client";
 import {
   GraduationCap,
@@ -53,6 +58,34 @@ export const Route = createFileRoute("/_authenticated/teacher")({
   }),
   component: TeacherWorkspacePage,
 });
+
+/**
+ * Sends the attached plain-text notes to the RAG index and returns the names of
+ * any files that failed, so the caller can tell the user instead of swallowing
+ * the error. Cover images are skipped — they are not course material.
+ */
+async function ingestAttachedFiles(
+  courseId: string,
+  files: Array<{ name: string; type: string; text: string }>
+): Promise<string[]> {
+  const failed: string[] = [];
+
+  for (const file of files) {
+    if (file.type === "image") continue;
+    if (!file.text || file.text.length <= 10) continue;
+
+    try {
+      await ingestDocument({
+        data: { courseId, documentName: file.name, rawText: file.text },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "unknown error";
+      failed.push(`${file.name} (${message})`);
+    }
+  }
+
+  return failed;
+}
 
 function TeacherWorkspacePage() {
   const navigate = useNavigate();
@@ -135,7 +168,7 @@ function TeacherWorkspacePage() {
   const createMutation = useMutation({
     mutationFn: async () => {
       if (attachedFiles.length === 0) {
-        throw new Error("Mandatory: Please attach at least 1 course material file (PDF, notes, or slides) to publish this course!");
+        throw new Error("Mandatory: attach at least 1 course note (.txt or .md) or cover image to publish this course.");
       }
       const course = await createCourse({
         data: {
@@ -148,21 +181,12 @@ function TeacherWorkspacePage() {
         },
       });
 
-      // Ingest uploaded textbook files into RAG vector store for this course
-      for (const file of attachedFiles) {
-        if (file.text && file.text.length > 10) {
-          try {
-            await ingestDocument({
-              data: {
-                courseId: course.id,
-                documentName: file.name,
-                rawText: file.text,
-              },
-            });
-          } catch {
-            /* Handled gracefully */
-          }
-        }
+      // Index uploaded notes into the RAG vector store for this course
+      const failedIngestions = await ingestAttachedFiles(course.id, attachedFiles);
+      if (failedIngestions.length > 0) {
+        toast.warning(
+          `Course published, but ${failedIngestions.length} file(s) were not indexed for AI grounding: ${failedIngestions.join("; ")}`
+        );
       }
 
       return course;
@@ -195,21 +219,12 @@ function TeacherWorkspacePage() {
         },
       });
 
-      // Ingest any newly attached textbook files
-      for (const file of attachedFiles) {
-        if (file.text && file.text.length > 10) {
-          try {
-            await ingestDocument({
-              data: {
-                courseId: editingCourse.id,
-                documentName: file.name,
-                rawText: file.text,
-              },
-            });
-          } catch {
-            /* Handled gracefully */
-          }
-        }
+      // Index any newly attached notes too
+      const failedIngestions = await ingestAttachedFiles(editingCourse.id, attachedFiles);
+      if (failedIngestions.length > 0) {
+        toast.warning(
+          `Course updated, but ${failedIngestions.length} file(s) were not indexed for AI grounding: ${failedIngestions.join("; ")}`
+        );
       }
     },
     onSuccess: () => {
@@ -274,26 +289,41 @@ function TeacherWorkspacePage() {
     if (!files || files.length === 0) return;
 
     Array.from(files).forEach((file) => {
-      const isImage = file.type.startsWith("image/");
-      const reader = new FileReader();
-
-      if (isImage) {
+      // Images are cover art only — they are never chunked or embedded.
+      if (file.type.startsWith("image/")) {
         setAttachedFiles((prev) => [
           ...prev,
           { name: file.name, type: "image", text: `[Course Cover Image: ${file.name}]` },
         ]);
-        toast.success(`Attached image: ${file.name}`);
-      } else {
-        reader.onload = (event) => {
-          const content = (event.target?.result as string) || `[Course Material: ${file.name}]`;
-          setAttachedFiles((prev) => [
-            ...prev,
-            { name: file.name, type: "document", text: content },
-          ]);
-          toast.success(`Attached file: ${file.name}`);
-        };
-        reader.readAsText(file);
+        toast.success(`Attached cover image: ${file.name}`);
+        return;
       }
+
+      if (!isPlainTextFile({ name: file.name, type: file.type })) {
+        toast.error(unsupportedFileMessage(file.name));
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onerror = () => toast.error(`Could not read ${file.name}.`);
+      reader.onload = (event) => {
+        const content = (event.target?.result as string) || "";
+        const binaryReason = findBinaryContentReason(content);
+        if (binaryReason) {
+          toast.error(`${file.name}: ${binaryReason}.`);
+          return;
+        }
+        if (content.trim().length < 10) {
+          toast.error(`${file.name} has no readable text to index.`);
+          return;
+        }
+        setAttachedFiles((prev) => [
+          ...prev,
+          { name: file.name, type: "document", text: content },
+        ]);
+        toast.success(`Attached file: ${file.name}`);
+      };
+      reader.readAsText(file);
     });
 
     // Reset input value so selecting the exact same file again triggers onChange
@@ -914,22 +944,22 @@ function TeacherWorkspacePage() {
               <div className="rounded-xl border border-dashed border-border bg-background p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-ink flex items-center gap-1.5">
-                    <Upload className="w-4 h-4 text-brand" /> Upload Additional Textbooks & Notes
+                    <Upload className="w-4 h-4 text-brand" /> Upload Additional Notes & Cover Images
                   </span>
                 </div>
 
                 <label className="flex flex-col items-center justify-center p-4 border border-border rounded-xl bg-surface hover:bg-surface-strong cursor-pointer transition">
                   <div className="flex items-center gap-2 text-xs font-semibold text-ink-muted">
                     <Upload className="w-4 h-4 text-indigo-500" />
-                    <span>Choose PDFs, Notes, Slides, or Cover Images</span>
+                    <span>Choose Notes (.txt, .md) or Cover Images</span>
                   </div>
                   <span className="text-[10px] text-ink-subtle mt-1">
-                    Supports .pdf, .txt, .md, .docx, .png, .jpg (Auto-indexed for RAG Grounding)
+                    .txt and .md files are indexed for AI grounding. Images are used as cover art only.
                   </span>
                   <input
                     type="file"
                     multiple
-                    accept=".pdf,.txt,.md,.docx,image/*"
+                    accept=".txt,.md,image/*"
                     onChange={handleFileUpload}
                     className="hidden"
                   />
@@ -1047,22 +1077,22 @@ function TeacherWorkspacePage() {
               <div className="rounded-xl border border-dashed border-border bg-background p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-ink flex items-center gap-1.5">
-                    <Upload className="w-4 h-4 text-brand" /> Upload Course PDF Textbooks & Slides
+                    <Upload className="w-4 h-4 text-brand" /> Upload Course Notes & Cover Images
                   </span>
                 </div>
 
                 <label className="flex flex-col items-center justify-center p-4 border border-border rounded-xl bg-surface hover:bg-surface-strong cursor-pointer transition">
                   <div className="flex items-center gap-2 text-xs font-semibold text-ink-muted">
                     <Upload className="w-4 h-4 text-indigo-500" />
-                    <span>Choose PDFs, Notes, Slides, or Cover Images</span>
+                    <span>Choose Notes (.txt, .md) or Cover Images</span>
                   </div>
                   <span className="text-[10px] text-ink-subtle mt-1">
-                    Supports .pdf, .txt, .md, .docx, .png, .jpg (Auto-indexed for RAG Grounding)
+                    .txt and .md files are indexed for AI grounding. Images are used as cover art only.
                   </span>
                   <input
                     type="file"
                     multiple
-                    accept=".pdf,.txt,.md,.docx,image/*"
+                    accept=".txt,.md,image/*"
                     onChange={handleFileUpload}
                     className="hidden"
                   />

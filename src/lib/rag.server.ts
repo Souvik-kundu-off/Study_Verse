@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { getSystemSettingsServer } from "@/lib/settings.server";
+import { findBinaryContentReason } from "@/lib/text-guard";
 
 const API_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -60,6 +61,14 @@ export const ingestDocument = createServerFn({ method: "POST" })
   .validator((input: unknown) => ingestDocInput.parse(input))
   .handler(async ({ data, context }) => {
     const userId = context.userId;
+
+    // Refuse binary payloads before chunking: a mis-decoded PDF or DOCX would
+    // otherwise be embedded as mojibake and stay in the vector store forever.
+    const binaryReason = findBinaryContentReason(data.rawText);
+    if (binaryReason) {
+      throw new Error(`Cannot ingest "${data.documentName}": ${binaryReason}.`);
+    }
+
     const rawChunks = chunkText(data.rawText);
 
     // Fetch existing chunk content hashes to deduplicate & save database storage
