@@ -229,6 +229,10 @@ export type Database = {
           is_verified_instructor: boolean | null
           preferred_learning_style: string | null
           target_exam: string | null
+          xp: number
+          level: number
+          current_streak: number
+          longest_streak: number
         }
         Insert: {
           avatar_url?: string | null
@@ -247,6 +251,10 @@ export type Database = {
           is_verified_instructor?: boolean | null
           preferred_learning_style?: string | null
           target_exam?: string | null
+          xp?: number
+          level?: number
+          current_streak?: number
+          longest_streak?: number
         }
         Update: {
           avatar_url?: string | null
@@ -265,6 +273,10 @@ export type Database = {
           is_verified_instructor?: boolean | null
           preferred_learning_style?: string | null
           target_exam?: string | null
+          xp?: number
+          level?: number
+          current_streak?: number
+          longest_streak?: number
         }
         Relationships: []
       }

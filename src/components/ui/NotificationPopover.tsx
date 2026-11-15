@@ -35,7 +35,7 @@ export function NotificationPopover({ userId, role }: NotificationPopoverProps) 
     queryFn: async () => {
       const { data } = await supabase
         .from("profiles")
-        .select("role, is_verified_instructor")
+        .select("role, is_verified_instructor, current_streak")
         .eq("id", userId)
         .maybeSingle();
       return data;
@@ -44,7 +44,7 @@ export function NotificationPopover({ userId, role }: NotificationPopoverProps) 
 
   const isAdmin = role === "admin" || profile?.role === "admin";
   const isInstructor = role === "instructor" || profile?.role === "instructor";
-  const isVerified = (profile as any)?.is_verified_instructor;
+  const isVerified = profile?.is_verified_instructor;
 
   return (
     <Popover>
@@ -116,7 +116,7 @@ export function NotificationPopover({ userId, role }: NotificationPopoverProps) 
                 <span>Daily Streak Notice</span>
               </div>
               <p className="text-slate-700 leading-relaxed font-medium">
-                Current streak: <strong className="text-amber-900">{(profile as any)?.current_streak ?? 0} days</strong>. Complete today's mission to extend!
+                Current streak: <strong className="text-amber-900">{profile.current_streak ?? 0} days</strong>. Complete today's mission to extend!
               </p>
             </div>
           )}
