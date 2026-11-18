@@ -151,7 +151,7 @@ function Dashboard() {
   });
 
   const fetchDueCards = useServerFn(getDueCards);
-  const { data: dueCards } = useQuery({
+  const { data: dueCards, isLoading: dueCardsLoading } = useQuery({
     queryKey: ["due-cards", user.id],
     queryFn: () => fetchDueCards(),
   });
@@ -355,15 +355,19 @@ function Dashboard() {
           <StatCard label="Progress" value={`${progressPct}%`} icon={Target} sub={`${completed}/${total} topics`} />
           <StatCard
             label="Due today"
-            value={`${dueCards?.dueCount ?? 0} cards`}
+            value={dueCardsLoading || !dueCards ? "—" : `${dueCards.dueCount} cards`}
             icon={Layers}
             to="/review"
             sub={
-              dueCards && dueCards.dueCount > 0
-                ? "Start review session"
-                : dueCards && dueCards.totalCards > 0
-                  ? "All caught up"
-                  : "No flashcards yet"
+              dueCardsLoading
+                ? "Loading due cards…"
+                : !dueCards
+                  ? "Couldn't load due cards"
+                  : dueCards.dueCount > 0
+                    ? "Start review session"
+                    : dueCards.totalCards > 0
+                      ? "All caught up"
+                      : "No flashcards yet"
             }
           />
         </div>
