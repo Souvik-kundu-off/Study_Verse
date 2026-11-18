@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { getProgress } from "@/lib/progress.functions";
+import { getDueCards } from "@/lib/review.functions";
 import { StreakCard } from "@/components/progress/StreakCard";
 import { ActivityHeatmap } from "@/components/progress/ActivityHeatmap";
 import { WeeklyChart } from "@/components/progress/WeeklyChart";
@@ -10,7 +11,7 @@ import { GoalProgress } from "@/components/progress/GoalProgress";
 import { useState, useEffect } from "react";
 import { CreateTrackModal } from "@/components/study/CreateTrackModal";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowRight, Flame, Clock, Bot, CheckCircle2, Circle, Target, RotateCcw, Plus, BookMarked, Sunrise, Sun, Sunset, Moon } from "lucide-react";
+import { ArrowRight, Flame, Clock, Bot, CheckCircle2, Circle, Target, RotateCcw, Plus, BookMarked, Sunrise, Sun, Sunset, Moon, Layers } from "lucide-react";
 import { z } from "zod";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -147,6 +148,12 @@ function Dashboard() {
   const { data: progress } = useQuery({
     queryKey: ["progress", user.id],
     queryFn: () => fetchProgress(),
+  });
+
+  const fetchDueCards = useServerFn(getDueCards);
+  const { data: dueCards } = useQuery({
+    queryKey: ["due-cards", user.id],
+    queryFn: () => fetchDueCards(),
   });
 
   const currentTopicIndex = orderedTopics.findIndex((t) => t.status !== "completed");
@@ -346,6 +353,19 @@ function Dashboard() {
           <StatCard label="Streak" value={`${streak} days`} icon={Flame} />
           <StatCard label="This week" value={formatMinutes(weekMinutes)} icon={Clock} />
           <StatCard label="Progress" value={`${progressPct}%`} icon={Target} sub={`${completed}/${total} topics`} />
+          <StatCard
+            label="Due today"
+            value={`${dueCards?.dueCount ?? 0} cards`}
+            icon={Layers}
+            to="/review"
+            sub={
+              dueCards && dueCards.dueCount > 0
+                ? "Start review session"
+                : dueCards && dueCards.totalCards > 0
+                  ? "All caught up"
+                  : "No flashcards yet"
+            }
+          />
         </div>
       </section>
 
@@ -482,22 +502,37 @@ function StatCard({
   value,
   sub,
   icon: Icon,
+  to,
 }: {
   label: string;
   value: string;
   sub?: string;
   icon: React.ElementType;
+  to?: "/review";
 }) {
-  return (
-    <div className="surface-card p-5">
+  const content = (
+    <>
       <div className="flex items-center justify-between text-ink-muted">
         <span className="text-xs uppercase tracking-widest">{label}</span>
         <Icon className="h-4 w-4" />
       </div>
       <p className="mt-2 font-display text-3xl text-ink">{value}</p>
       {sub && <p className="mt-1 text-xs text-ink-subtle">{sub}</p>}
-    </div>
+    </>
   );
+
+  if (to) {
+    return (
+      <Link
+        to={to}
+        className="surface-card block p-5 transition hover:border-ink/20 hover:bg-surface-strong/40"
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return <div className="surface-card p-5">{content}</div>;
 }
 
 function formatMinutes(m: number) {

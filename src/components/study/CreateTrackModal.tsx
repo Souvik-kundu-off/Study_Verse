@@ -16,10 +16,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Plus, Loader2, Upload, BookOpen, Sun, Moon, Sunrise, Sunset, Zap, Library, GraduationCap, Sparkles } from "lucide-react";
 import {
-  findBinaryContentReason,
-  isPlainTextFile,
-  unsupportedFileMessage,
-} from "@/lib/text-guard";
+  extractDocumentText,
+  INDEXABLE_FILE_ACCEPT,
+  isIndexableFile,
+} from "@/lib/file-extract";
+
+/** Must match `roadmapInput.syllabusText` in ai.functions.ts. */
+const MAX_SYLLABUS_CHARS = 10000;
 
 interface CreateTrackModalProps {
   open: boolean;
@@ -86,35 +89,47 @@ export function CreateTrackModal({ open, onOpenChange, onSuccess }: CreateTrackM
   const [fileFileName, setFileFileName] = useState<string | null>(null);
   const [confirmedSyllabus, setConfirmedSyllabus] = useState(false);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Only real text is accepted. There is no OCR or document parser here, so
-    // anything else would have to be invented — refuse it instead.
-    if (!isPlainTextFile({ name: file.name, type: file.type })) {
-      toast.error(unsupportedFileMessage(file.name));
-      e.target.value = "";
+    // Read the selection before clearing the input: the File object stays valid.
+    e.target.value = "";
+
+    if (!isIndexableFile({ name: file.name, type: file.type })) {
+      toast.error(
+        `"${file.name}" can't be read. Attach a PDF, .txt or .md file — export Word or slide files first.`,
+      );
       return;
     }
 
-    const reader = new FileReader();
-    reader.onerror = () => toast.error(`Could not read ${file.name}.`);
-    reader.onload = (event) => {
-      const text = (event.target?.result as string) || "";
-      const binaryReason = findBinaryContentReason(text);
-      if (binaryReason) {
-        toast.error(`${file.name}: ${binaryReason}.`);
+    try {
+      const extracted = await extractDocumentText(file);
+      const text = extracted.text;
+      if (text.trim().length < 10) {
+        toast.error(`${file.name} has no readable text.`);
         return;
       }
+
+      // The roadmap generator rejects anything longer, so trim here and say so
+      // rather than failing the whole submit later.
+      if (text.length > MAX_SYLLABUS_CHARS) {
+        setFileFileName(file.name);
+        setSyllabusText(text.slice(0, MAX_SYLLABUS_CHARS));
+        setConfirmedSyllabus(true);
+        toast.warning(
+          `Loaded the first ${MAX_SYLLABUS_CHARS.toLocaleString()} characters of ${file.name} — the syllabus field is capped.`,
+        );
+        return;
+      }
+
       setFileFileName(file.name);
       setSyllabusText(text);
       setConfirmedSyllabus(true);
       toast.success(`Loaded syllabus content from ${file.name}`);
-    };
-    reader.readAsText(file);
-
-    e.target.value = "";
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : `Could not read ${file.name}.`);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -314,10 +329,10 @@ export function CreateTrackModal({ open, onOpenChange, onSuccess }: CreateTrackM
                 </Label>
                 <label className="cursor-pointer text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-semibold">
                   <Upload className="w-3.5 h-3.5" />
-                  Attach Notes (.txt, .md)
+                  Attach Notes (PDF, .txt, .md)
                   <input
                     type="file"
-                    accept=".txt,.md"
+                    accept={INDEXABLE_FILE_ACCEPT}
                     onChange={handleFileUpload}
                     className="hidden"
                   />

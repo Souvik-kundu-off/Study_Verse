@@ -1,11 +1,14 @@
 /**
  * Guards the RAG ingestion boundary against binary payloads.
  *
- * Uploaded files are read with `FileReader.readAsText`, which does not fail on
- * a PDF or DOCX — it decodes the bytes into mojibake. That string then gets
- * chunked and embedded, quietly filling `document_chunks` with unreadable rows.
- * These helpers let the client refuse the file and let the server refuse the
- * payload, so bad content never reaches the vector store.
+ * `FileReader.readAsText` does not fail on a DOCX or a scanned PDF — it decodes
+ * the bytes into mojibake. That string then gets chunked and embedded, quietly
+ * filling `document_chunks` with unreadable rows. These helpers let the client
+ * refuse the file and let the server refuse the payload, so bad content never
+ * reaches the vector store.
+ *
+ * PDFs are not passed through `readAsText`: `file-extract.ts` parses them with
+ * pdf.js and runs the resulting text through `findBinaryContentReason` here.
  */
 
 /**
@@ -71,5 +74,5 @@ export function isPlainTextFile(file: { name: string; type: string }): boolean {
 
 /** Consistent refusal copy for a file we cannot index. */
 export function unsupportedFileMessage(name: string): string {
-  return `"${name}" can't be indexed. Attach plain-text notes (.txt or .md) — PDFs and Word documents must be converted to text first.`;
+  return `"${name}" can't be indexed. Attach a PDF, or plain-text notes (.txt or .md). Word and slide files should be exported to PDF or text first.`;
 }

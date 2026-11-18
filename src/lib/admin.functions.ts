@@ -2,6 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { embedTexts, isEmbeddingConfigured } from "@/lib/embeddings.server";
+import { DEFAULT_MATCH_COUNT, DEFAULT_MATCH_THRESHOLD } from "@/lib/rag-tuning";
 
 /** Creates a service-role Supabase client that bypasses RLS. Server-only. */
 function getAdminSupabase() {
@@ -106,6 +108,12 @@ export const getAdminTelemetry = createServerFn({ method: "GET" })
     const { count: totalVectorChunks } = await supabase
       .from("document_chunks")
       .select("*", { count: "exact", head: true });
+    // Chunks ingested before real embeddings existed have a NULL vector and are
+    // invisible to retrieval until the backfill below runs.
+    const { count: pendingVectorChunks } = await supabase
+      .from("document_chunks")
+      .select("*", { count: "exact", head: true })
+      .is("embedding", null);
     const { count: totalSessions } = await supabase.from("study_sessions").select("*", { count: "exact", head: true });
 
     // Fetch quiz attempts for student efficacy analytics
@@ -131,6 +139,7 @@ export const getAdminTelemetry = createServerFn({ method: "GET" })
       totalCourses: totalCourses ?? 0,
       totalEnrollments: totalEnrollments ?? 0,
       totalVectorChunks: totalVectorChunks ?? 0,
+      pendingVectorChunks: pendingVectorChunks ?? 0,
       totalSessions: totalSessions ?? 0,
       roleCounts,
       studentEfficacy: {
@@ -323,8 +332,8 @@ export const getSystemSettings = createServerFn({ method: "GET" })
 
     return {
       aiModel: settingsMap["ai_model"] ?? "qwen-3.8-27b",
-      matchThreshold: parseFloat(settingsMap["match_threshold"] ?? "0.30"),
-      matchCount: parseInt(settingsMap["match_count"] ?? "4", 10),
+      matchThreshold: parseFloat(settingsMap["match_threshold"] ?? String(DEFAULT_MATCH_THRESHOLD)),
+      matchCount: parseInt(settingsMap["match_count"] ?? String(DEFAULT_MATCH_COUNT), 10),
       maintenanceMode: settingsMap["maintenance_mode"] === "true",
       systemAnnouncement: settingsMap["system_announcement"] ?? "",
     };
@@ -382,6 +391,99 @@ export const purgeOrphanedVectorChunks = createServerFn({ method: "POST" })
 
     if (error) throw new Error(error.message);
     return { success: true, purgedCount: count ?? 0 };
+  });
+
+/** Rows embedded per invocation. Keeps one click inside the request timeout. */
+const REEMBED_CHUNK_LIMIT = 500;
+
+/**
+ * Backfills real embeddings for chunks that have none.
+ *
+ * The old ingestion path stored character-histogram vectors; retyping the column
+ * to `VECTOR(768)` nulled them. Those chunks keep their text but cannot be
+ * retrieved until they are re-embedded, so this must run before grounded
+ * citations are meaningful for existing uploads.
+ *
+ * Bounded per call: each click embeds up to {@link REEMBED_CHUNK_LIMIT} rows and
+ * reports how many are left, so a large backlog repeats rather than timing out.
+ */
+export const reembedChunks = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    await requireAdminRole(supabase, userId);
+
+    if (!isEmbeddingConfigured()) {
+      throw new Error(
+        "Embeddings are not configured. Set GEMINI_API_KEY on the server before backfilling — no fake vectors will be written.",
+      );
+    }
+
+    const adminDb = getAdminSupabase();
+    const embeddedAt = new Date().toISOString();
+
+    const { data: pending, error: selectError } = await adminDb
+      .from("document_chunks")
+      .select("id, content")
+      .is("embedding", null)
+      .order("created_at", { ascending: true })
+      .limit(REEMBED_CHUNK_LIMIT);
+
+    if (selectError) throw new Error(selectError.message);
+
+    const rows = (pending ?? []) as Array<{ id: string; content: string }>;
+    if (rows.length === 0) {
+      return { reembedded: 0, remaining: 0, failed: 0 };
+    }
+
+    let reembedded = 0;
+    let failed = 0;
+    let embeddingModel: string | null = null;
+
+    try {
+      const { vectors, model } = await embedTexts(
+        rows.map((row) => row.content),
+        "RETRIEVAL_DOCUMENT",
+      );
+      embeddingModel = model;
+
+      // One update per row: PostgREST has no bulk update by id list, and these
+      // rows are independent, so run them concurrently.
+      const results = await Promise.all(
+        rows.map((row, index) =>
+          adminDb
+            .from("document_chunks")
+            .update({
+              embedding: JSON.stringify(vectors[index]),
+              embedding_model: model,
+              embedded_at: embeddedAt,
+            })
+            .eq("id", row.id),
+        ),
+      );
+
+      results.forEach((result) => {
+        if (result.error) failed += 1;
+        else reembedded += 1;
+      });
+    } catch (error) {
+      // The provider failed for the whole batch; nothing was written.
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Embedding backfill failed: ${message}`);
+    }
+
+    const { count: remaining } = await adminDb
+      .from("document_chunks")
+      .select("*", { count: "exact", head: true })
+      .is("embedding", null);
+
+    if (failed > 0) {
+      console.error(
+        `[Admin] Re-embed backfill: ${failed} of ${rows.length} chunks failed with model ${embeddingModel}.`,
+      );
+    }
+
+    return { reembedded, remaining: remaining ?? 0, failed };
   });
 
 export const getAdminAuditLog = createServerFn({ method: "GET" })

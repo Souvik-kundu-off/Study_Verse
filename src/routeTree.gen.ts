@@ -16,6 +16,7 @@ import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedCoursesRouteImport } from './routes/_authenticated/courses'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
+import { Route as AuthenticatedReviewRouteImport } from './routes/_authenticated/review'
 import { Route as AuthenticatedRoadmapRouteImport } from './routes/_authenticated/roadmap'
 import { Route as AuthenticatedTeacherRouteImport } from './routes/_authenticated/teacher'
 import { Route as AuthenticatedFocusTopicIdRouteImport } from './routes/_authenticated/focus.$topicId'
@@ -54,6 +55,11 @@ const AuthenticatedOnboardingRoute = AuthenticatedOnboardingRouteImport.update({
   path: '/onboarding',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedReviewRoute = AuthenticatedReviewRouteImport.update({
+  id: '/review',
+  path: '/review',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedRoadmapRoute = AuthenticatedRoadmapRouteImport.update({
   id: '/roadmap',
   path: '/roadmap',
@@ -78,6 +84,7 @@ export interface FileRoutesByFullPath {
   '/courses': typeof AuthenticatedCoursesRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
+  '/review': typeof AuthenticatedReviewRoute
   '/roadmap': typeof AuthenticatedRoadmapRoute
   '/teacher': typeof AuthenticatedTeacherRoute
   '/focus/$topicId': typeof AuthenticatedFocusTopicIdRoute
@@ -89,6 +96,7 @@ export interface FileRoutesByTo {
   '/courses': typeof AuthenticatedCoursesRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
+  '/review': typeof AuthenticatedReviewRoute
   '/roadmap': typeof AuthenticatedRoadmapRoute
   '/teacher': typeof AuthenticatedTeacherRoute
   '/focus/$topicId': typeof AuthenticatedFocusTopicIdRoute
@@ -102,6 +110,7 @@ export interface FileRoutesById {
   '/_authenticated/courses': typeof AuthenticatedCoursesRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
+  '/_authenticated/review': typeof AuthenticatedReviewRoute
   '/_authenticated/roadmap': typeof AuthenticatedRoadmapRoute
   '/_authenticated/teacher': typeof AuthenticatedTeacherRoute
   '/_authenticated/focus/$topicId': typeof AuthenticatedFocusTopicIdRoute
@@ -115,6 +124,7 @@ export interface FileRouteTypes {
     | '/courses'
     | '/dashboard'
     | '/onboarding'
+    | '/review'
     | '/roadmap'
     | '/teacher'
     | '/focus/$topicId'
@@ -126,6 +136,7 @@ export interface FileRouteTypes {
     | '/courses'
     | '/dashboard'
     | '/onboarding'
+    | '/review'
     | '/roadmap'
     | '/teacher'
     | '/focus/$topicId'
@@ -138,6 +149,7 @@ export interface FileRouteTypes {
     | '/_authenticated/courses'
     | '/_authenticated/dashboard'
     | '/_authenticated/onboarding'
+    | '/_authenticated/review'
     | '/_authenticated/roadmap'
     | '/_authenticated/teacher'
     | '/_authenticated/focus/$topicId'
@@ -200,6 +212,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedOnboardingRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/review': {
+      id: '/_authenticated/review'
+      path: '/review'
+      fullPath: '/review'
+      preLoaderRoute: typeof AuthenticatedReviewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/roadmap': {
       id: '/_authenticated/roadmap'
       path: '/roadmap'
@@ -229,6 +248,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedCoursesRoute: typeof AuthenticatedCoursesRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
+  AuthenticatedReviewRoute: typeof AuthenticatedReviewRoute
   AuthenticatedRoadmapRoute: typeof AuthenticatedRoadmapRoute
   AuthenticatedTeacherRoute: typeof AuthenticatedTeacherRoute
   AuthenticatedFocusTopicIdRoute: typeof AuthenticatedFocusTopicIdRoute
@@ -239,6 +259,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedCoursesRoute: AuthenticatedCoursesRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
+  AuthenticatedReviewRoute: AuthenticatedReviewRoute,
   AuthenticatedRoadmapRoute: AuthenticatedRoadmapRoute,
   AuthenticatedTeacherRoute: AuthenticatedTeacherRoute,
   AuthenticatedFocusTopicIdRoute: AuthenticatedFocusTopicIdRoute,

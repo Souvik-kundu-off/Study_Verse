@@ -2,9 +2,9 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { getSystemSettingsServer } from "@/lib/settings.server";
+import { DEFAULT_MATCH_COUNT, DEFAULT_MATCH_THRESHOLD } from "@/lib/rag-tuning";
+import { embedTexts } from "@/lib/embeddings.server";
 import { findBinaryContentReason } from "@/lib/text-guard";
-
-const API_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
 /**
  * Storage-Optimized Text Chunker:
@@ -35,16 +35,35 @@ export function chunkText(text: string, chunkSize = 600, overlap = 80, maxChunks
   return chunks;
 }
 
-// Compact Vector Embedding Generator
-function generateFallbackEmbedding(text: string): number[] {
-  const vec = new Array(1536).fill(0);
-  for (let i = 0; i < text.length; i++) {
-    const code = text.charCodeAt(i);
-    const idx = (code * (i + 1)) % 1536;
-    vec[idx] = (vec[idx] + (code / 255)) / 2;
+/** A unit of text from a specific source page, when the source has pages. */
+interface TextSegment {
+  text: string;
+  pageNumber: number | null;
+}
+
+interface ChunkDraft {
+  content: string;
+  pageNumber: number | null;
+}
+
+const MAX_CHUNKS_PER_DOCUMENT = 100;
+
+/**
+ * Splits each segment independently so a chunk never straddles a page break —
+ * that is what makes the recorded page number accurate rather than estimated.
+ */
+function buildChunks(segments: TextSegment[], maxChunks = MAX_CHUNKS_PER_DOCUMENT): ChunkDraft[] {
+  const chunks: ChunkDraft[] = [];
+
+  for (const segment of segments) {
+    if (chunks.length >= maxChunks) break;
+    const remaining = maxChunks - chunks.length;
+    for (const content of chunkText(segment.text, 600, 80, remaining)) {
+      chunks.push({ content, pageNumber: segment.pageNumber });
+    }
   }
-  const norm = Math.sqrt(vec.reduce((sum, val) => sum + val * val, 0)) || 1;
-  return vec.map((val) => val / norm);
+
+  return chunks;
 }
 
 // Storage-Optimized Ingestion Server Function with Deduplication
@@ -54,6 +73,12 @@ const ingestDocInput = z.object({
   courseId: z.string().uuid().optional(),
   documentName: z.string().min(1),
   rawText: z.string().min(10),
+  /**
+   * Page-separated text, when the client could extract it (PDFs). Index `i`
+   * must be page `i + 1`; the server records that number as-is and does not
+   * guess page boundaries for plain text.
+   */
+  pages: z.array(z.string()).max(500).optional(),
 });
 
 export const ingestDocument = createServerFn({ method: "POST" })
@@ -69,88 +94,218 @@ export const ingestDocument = createServerFn({ method: "POST" })
       throw new Error(`Cannot ingest "${data.documentName}": ${binaryReason}.`);
     }
 
-    const rawChunks = chunkText(data.rawText);
+    // Prefer real page boundaries; fall back to one unpaginated segment, which
+    // is recorded with a NULL page number instead of a fabricated one.
+    const segments: TextSegment[] =
+      data.pages && data.pages.length > 0
+        ? data.pages.map((text, index) => ({ text, pageNumber: index + 1 }))
+        : [{ text: data.rawText, pageNumber: null }];
 
-    // Fetch existing chunk content hashes to deduplicate & save database storage
+    const drafts = buildChunks(segments);
+    if (drafts.length === 0) {
+      throw new Error(`"${data.documentName}" produced no indexable chunks.`);
+    }
+
+    // Existing rows for this document. Only rows that already carry a real
+    // vector count as duplicates; a row with a NULL embedding is a leftover
+    // from the fake-embedding era and should be refreshed, not skipped.
     const { data: existingDocs } = await context.supabase
       .from("document_chunks")
-      .select("content")
+      .select("id, content, embedding")
       .eq("user_id", userId)
       .eq("document_name", data.documentName)
-      .limit(200);
+      .limit(500);
 
-    const existingSet = new Set(existingDocs?.map((d) => d.content) ?? []);
+    const embeddedByContent = new Map<string, true>();
+    const unembeddedByContent = new Map<string, string>();
+    for (const row of existingDocs ?? []) {
+      if (row.embedding === null) {
+        if (!unembeddedByContent.has(row.content)) unembeddedByContent.set(row.content, row.id);
+      } else {
+        embeddedByContent.set(row.content, true);
+      }
+    }
 
-    // Filter out chunks that are already stored in the vector database
-    const uniqueChunks = rawChunks.filter((chunk) => !existingSet.has(chunk));
-
-    if (uniqueChunks.length === 0) {
+    const toInsert = drafts.filter((draft) => !embeddedByContent.has(draft.content));
+    if (toInsert.length === 0) {
       return { success: true, chunksIngested: 0, deduplicated: true };
     }
 
-    const records = uniqueChunks.map((chunk, idx) => {
-      const approxPage = Math.floor((idx * 450) / 1500) + 1;
-      const embedding = generateFallbackEmbedding(chunk);
-      return {
+    // Embed everything before writing. A failure here aborts with no partial
+    // rows and no fake vectors.
+    const { vectors, model } = await embedTexts(
+      toInsert.map((draft) => draft.content),
+      "RETRIEVAL_DOCUMENT",
+    );
+    const embeddedAt = new Date().toISOString();
+
+    // Rows that exist but never got a real vector. Updated in place (not
+    // upserted) so we never re-assert `content` over a concurrent edit.
+    const refreshRows: Array<{
+      id: string;
+      embedding: string;
+      embedding_model: string;
+      embedded_at: string;
+      page_number: number | null;
+    }> = [];
+    const insertRows: Array<{
+      user_id: string;
+      goal_id: string | null;
+      topic_id: string | null;
+      course_id: string | null;
+      document_name: string;
+      page_number: number | null;
+      chunk_index: number;
+      content: string;
+      embedding: string;
+      embedding_model: string;
+      embedded_at: string;
+    }> = [];
+
+    toInsert.forEach((draft, index) => {
+      const vector = JSON.stringify(vectors[index]);
+      const existingId = unembeddedByContent.get(draft.content);
+
+      if (existingId) {
+        refreshRows.push({
+          id: existingId,
+          embedding: vector,
+          embedding_model: model,
+          embedded_at: embeddedAt,
+          page_number: draft.pageNumber,
+        });
+        return;
+      }
+
+      insertRows.push({
         user_id: userId,
         goal_id: data.goalId ?? null,
         topic_id: data.topicId ?? null,
         course_id: data.courseId ?? null,
         document_name: data.documentName,
-        page_number: approxPage,
-        chunk_index: idx,
-        content: chunk,
-        embedding: JSON.stringify(embedding),
-      };
+        page_number: draft.pageNumber,
+        chunk_index: index,
+        content: draft.content,
+        embedding: vector,
+        embedding_model: model,
+        embedded_at: embeddedAt,
+      });
     });
 
-    // Insert unique chunks into document_chunks
-    const { error } = await context.supabase.from("document_chunks").insert(records);
-    if (error) throw new Error(`Failed to ingest document: ${error.message}`);
+    if (refreshRows.length > 0) {
+      const results = await Promise.all(
+        refreshRows.map((row) =>
+          context.supabase
+            .from("document_chunks")
+            .update({
+              embedding: row.embedding,
+              embedding_model: row.embedding_model,
+              embedded_at: row.embedded_at,
+              page_number: row.page_number,
+            })
+            .eq("id", row.id)
+            .eq("user_id", userId),
+        ),
+      );
+      const failed = results.find((result) => result.error);
+      if (failed?.error) {
+        throw new Error(`Failed to re-embed existing chunks: ${failed.error.message}`);
+      }
+    }
 
-    return { success: true, chunksIngested: records.length, deduplicated: false };
+    if (insertRows.length > 0) {
+      const { error } = await context.supabase.from("document_chunks").insert(insertRows);
+      if (error) throw new Error(`Failed to ingest document: ${error.message}`);
+    }
+
+    return { success: true, chunksIngested: toInsert.length, deduplicated: false };
   });
 
-// Retrieve Relevant Document Context for AI Prompts
+/** Minimal structural type for the fields we use, so callers stay decoupled. */
+interface GroundingClient {
+  // The generated client's `rpc` is generic per function name; accepting the
+  // concrete payload shape here is what makes it assignable.
+  rpc(
+    fn: "match_document_chunks",
+    args: {
+      query_embedding: string;
+      match_threshold: number;
+      match_count: number;
+      p_user_id: string;
+      p_topic_id: string;
+    },
+  ): PromiseLike<{ data: unknown; error: { message: string } | null }>;
+}
+
+interface MatchedChunk {
+  document_name: string;
+  page_number: number | null;
+  content: string;
+  similarity?: number;
+}
+
+/**
+ * Renders a citation. Page numbers are only included when the source actually
+ * had one — the previous implementation derived a page from the chunk ordinal,
+ * which produced confident-looking citations that pointed at nothing.
+ */
+function formatCitation(chunk: MatchedChunk): string {
+  const page = typeof chunk.page_number === "number" ? `, Page ${chunk.page_number}` : "";
+  return `[Source: ${chunk.document_name}${page}]: ${chunk.content}`;
+}
+
+/**
+ * Retrieve relevant document context for an AI prompt.
+ *
+ * Returns an empty string when nothing genuinely matches. There is deliberately
+ * no "grab a few arbitrary chunks" fallback: ungrounded text presented as a
+ * citation is worse than no citation.
+ */
 export async function getGroundedContext(
-  supabase: any,
+  supabase: GroundingClient,
   userId: string,
   topicId: string,
-  query: string
+  query: string,
 ): Promise<string> {
+  let queryVector: number[];
+  try {
+    const embedded = await embedTexts([query], "RETRIEVAL_QUERY");
+    queryVector = embedded.vectors[0];
+  } catch (error) {
+    console.warn(
+      "[RAG] Query embedding unavailable; answering without document context:",
+      error instanceof Error ? error.message : error,
+    );
+    return "";
+  }
+
   try {
     const settings = await getSystemSettingsServer();
-    const matchThreshold = settings.matchThreshold ?? 0.2;
-    const matchCount = settings.matchCount ?? 4;
+    const matchThreshold = settings.matchThreshold ?? DEFAULT_MATCH_THRESHOLD;
+    const matchCount = settings.matchCount ?? DEFAULT_MATCH_COUNT;
 
-    const queryEmb = generateFallbackEmbedding(query);
     const { data, error } = await supabase.rpc("match_document_chunks", {
-      query_embedding: JSON.stringify(queryEmb),
+      query_embedding: JSON.stringify(queryVector),
       match_threshold: matchThreshold,
       match_count: matchCount,
       p_user_id: userId,
       p_topic_id: topicId,
     });
 
-    if (error || !data || data.length === 0) {
-      // Fallback query directly from document_chunks
-      const { data: directDocs } = await supabase
-        .from("document_chunks")
-        .select("document_name, page_number, content")
-        .eq("user_id", userId)
-        .eq("topic_id", topicId)
-        .limit(3);
-
-      if (!directDocs || directDocs.length === 0) return "";
-      return directDocs
-        .map((d: any) => `[Source: ${d.document_name}, Page ${d.page_number}]: ${d.content}`)
-        .join("\n\n");
+    if (error) {
+      console.warn("[RAG] Similarity search failed:", error.message);
+      return "";
     }
 
-    return (data as any[])
-      .map((d) => `[Source: ${d.document_name}, Page ${d.page_number}]: ${d.content}`)
-      .join("\n\n");
-  } catch {
+    const matches = (data ?? []) as MatchedChunk[];
+    if (matches.length === 0) return "";
+
+    return matches.map(formatCitation).join("\n\n");
+  } catch (error) {
+    console.warn(
+      "[RAG] Grounded context lookup failed:",
+      error instanceof Error ? error.message : error,
+    );
     return "";
   }
 }

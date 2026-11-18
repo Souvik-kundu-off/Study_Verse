@@ -4,10 +4,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getCoursesCatalog, enrollInCourse, createCourse, unenrollCourse } from "@/lib/courses.functions";
 import { ingestDocument } from "@/lib/rag.server";
 import {
-  findBinaryContentReason,
-  isPlainTextFile,
-  unsupportedFileMessage,
-} from "@/lib/text-guard";
+  extractDocumentText,
+  INDEXABLE_FILE_ACCEPT,
+  isIndexableFile,
+} from "@/lib/file-extract";
 import { supabase } from "@/integrations/supabase/client";
 import {
   BookOpen,
@@ -49,15 +49,21 @@ export const Route = createFileRoute("/_authenticated/courses")({
   component: CoursesCatalogPage,
 });
 
+/** A file the user attached, already extracted to indexable text. */
+interface AttachedFile {
+  name: string;
+  type: "image" | "document";
+  text: string;
+  /** Present for PDFs: index `i` is page `i + 1`, so citations can be real. */
+  pages?: string[];
+}
+
 /**
- * Sends the attached plain-text notes to the RAG index and returns the names of
- * any files that failed, so the caller can tell the user instead of swallowing
- * the error. Cover images are skipped — they are not course material.
+ * Sends the attached notes to the RAG index and returns the names of any files
+ * that failed, so the caller can tell the user instead of swallowing the error.
+ * Cover images are skipped — they are not course material.
  */
-async function ingestAttachedFiles(
-  courseId: string,
-  files: Array<{ name: string; type: string; text: string }>
-): Promise<string[]> {
+async function ingestAttachedFiles(courseId: string, files: AttachedFile[]): Promise<string[]> {
   const failed: string[] = [];
 
   for (const file of files) {
@@ -66,7 +72,12 @@ async function ingestAttachedFiles(
 
     try {
       await ingestDocument({
-        data: { courseId, documentName: file.name, rawText: file.text },
+        data: {
+          courseId,
+          documentName: file.name,
+          rawText: file.text,
+          pages: file.pages,
+        },
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "unknown error";
@@ -94,7 +105,7 @@ function CoursesCatalogPage() {
   const [prerequisites, setPrerequisites] = useState("None — Open to all learners");
   const [estimatedDuration, setEstimatedDuration] = useState("4 Weeks (Self-paced)");
   const [syllabusText, setSyllabusText] = useState("");
-  const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; type: string; text: string }>>([]);
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
 
   // Fetch logged in profile role
   const { data: profile } = useQuery({
@@ -152,7 +163,9 @@ function CoursesCatalogPage() {
   const createMutation = useMutation({
     mutationFn: async () => {
       if (attachedFiles.length === 0) {
-        throw new Error("Mandatory: attach at least 1 course note (.txt or .md) or cover image to publish this course.");
+        throw new Error(
+          "Mandatory: attach at least 1 course note (PDF, .txt or .md) or cover image to publish this course.",
+        );
       }
       const fullDesc = `${description}\n\n**Prerequisites:** ${prerequisites}\n**Estimated Duration:** ${estimatedDuration}`;
       const course = await createCourse({
@@ -190,11 +203,15 @@ function CoursesCatalogPage() {
     },
   });
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    Array.from(files).forEach((file) => {
+    // Read the selection before clearing the input: the File objects stay valid.
+    const selected = Array.from(files);
+    e.target.value = "";
+
+    for (const file of selected) {
       // Images are cover art only — they are never chunked or embedded.
       if (file.type.startsWith("image/")) {
         setAttachedFiles((prev) => [
@@ -202,38 +219,32 @@ function CoursesCatalogPage() {
           { name: file.name, type: "image", text: `[Course Cover Image: ${file.name}]` },
         ]);
         toast.success(`Attached cover image: ${file.name}`);
-        return;
+        continue;
       }
 
-      if (!isPlainTextFile({ name: file.name, type: file.type })) {
-        toast.error(unsupportedFileMessage(file.name));
-        return;
+      if (!isIndexableFile({ name: file.name, type: file.type })) {
+        toast.error(
+          `"${file.name}" can't be indexed. Attach a PDF, .txt or .md file — export Word or slide files first.`,
+        );
+        continue;
       }
 
-      const reader = new FileReader();
-      reader.onerror = () => toast.error(`Could not read ${file.name}.`);
-      reader.onload = (event) => {
-        const content = (event.target?.result as string) || "";
-        const binaryReason = findBinaryContentReason(content);
-        if (binaryReason) {
-          toast.error(`${file.name}: ${binaryReason}.`);
-          return;
-        }
-        if (content.trim().length < 10) {
-          toast.error(`${file.name} has no readable text to index.`);
-          return;
-        }
+      try {
+        const extracted = await extractDocumentText(file);
         setAttachedFiles((prev) => [
           ...prev,
-          { name: file.name, type: "document", text: content },
+          {
+            name: extracted.name,
+            type: "document",
+            text: extracted.text,
+            pages: extracted.pages,
+          },
         ]);
-        toast.success(`Attached file: ${file.name}`);
-      };
-      reader.readAsText(file);
-    });
-
-    // Reset input value so selecting the exact same file again triggers onChange
-    e.target.value = "";
+        toast.success(`Attached file: ${extracted.name}`);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : `Could not read ${file.name}.`);
+      }
+    }
   };
 
   const categories = [
@@ -461,14 +472,18 @@ function CoursesCatalogPage() {
                   <span className="text-[11px] font-semibold text-ink flex items-center gap-1">
                     <BookCheck className="w-3.5 h-3.5 text-emerald-500" /> Verified Materials
                   </span>
-                  <p className="text-[10px] text-ink-subtle">Trained on official textbooks & lecture PDFs.</p>
+                  <p className="text-[10px] text-ink-subtle">
+                    Course notes uploaded by the instructor are indexed for grounded AI answers.
+                  </p>
                 </div>
 
                 <div className="p-3 rounded-xl border border-border bg-background space-y-1">
                   <span className="text-[11px] font-semibold text-ink flex items-center gap-1">
                     <Bot className="w-3.5 h-3.5 text-indigo-500" /> Grounded AI Tutor
                   </span>
-                  <p className="text-[10px] text-ink-subtle">Answers derived directly from official slides.</p>
+                  <p className="text-[10px] text-ink-subtle">
+                    Answers cite the instructor's uploaded notes when they match.
+                  </p>
                 </div>
               </div>
             </div>
@@ -630,15 +645,15 @@ function CoursesCatalogPage() {
                 <label className="flex flex-col items-center justify-center p-4 border border-border rounded-xl bg-surface hover:bg-surface-strong cursor-pointer transition">
                   <div className="flex items-center gap-2 text-xs font-semibold text-ink-muted">
                     <Upload className="w-4 h-4 text-indigo-500" />
-                    <span>Choose Notes (.txt, .md) or Cover Images</span>
+                    <span>Choose Notes (PDF, .txt, .md) or Cover Images</span>
                   </div>
                   <span className="text-[10px] text-ink-subtle mt-1">
-                    .txt and .md files are indexed for AI grounding. Images are used as cover art only.
+                    PDF, .txt and .md files are indexed for AI grounding. Images are used as cover art only.
                   </span>
                   <input
                     type="file"
                     multiple
-                    accept=".txt,.md,image/*"
+                    accept={`${INDEXABLE_FILE_ACCEPT},image/*`}
                     onChange={handleFileUpload}
                     className="hidden"
                   />

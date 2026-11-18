@@ -16,6 +16,7 @@ import { CodingPlayground } from "@/components/tools/CodingPlayground";
 import { FormattedText, MarkdownInline } from "@/components/ui/FormattedText";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ingestDocument } from "@/lib/rag.server";
+import { reviewFlashcard, type ReviewGrade } from "@/lib/review.functions";
 
 export const Route = createFileRoute("/_authenticated/focus/$topicId")({
   head: () => ({
@@ -93,6 +94,22 @@ function FocusWorkspace() {
   const saveAttempt = useServerFn(saveQuizAttempt);
   const genCards = useServerFn(generateFlashcardsForTopic);
   const ingestFn = useServerFn(ingestDocument);
+  const submitReview = useServerFn(reviewFlashcard);
+
+  /** Saves the review schedule, then refreshes the deck and the due count. */
+  const handleGradeCard = useCallback(
+    async (cardId: string, grade: ReviewGrade) => {
+      try {
+        await submitReview({ data: { flashcardId: cardId, grade } });
+        await qc.invalidateQueries({ queryKey: ["flashcards", topicId] });
+        await qc.invalidateQueries({ queryKey: ["due-cards", user.id] });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Could not save your review.");
+        throw err;
+      }
+    },
+    [submitReview, qc, topicId, user.id],
+  );
 
   // Auto trigger fullscreen focus mode on lesson start
   useEffect(() => {
@@ -1196,6 +1213,7 @@ function FocusWorkspace() {
               <FlashcardDeck
                 cards={(cardsData as any) ?? []}
                 loading={generatingCards}
+                onGrade={handleGradeCard}
                 onGenerateMore={async () => {
                   setGeneratingCards(true);
                   await genCards({ data: { topicId } });

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { RotateCw, Zap, ChevronRight, LayoutGrid, Layers } from "lucide-react";
 import { MarkdownInline } from "@/components/ui/FormattedText";
+import type { ReviewGrade } from "@/lib/review.functions";
 
 type Flashcard = {
   id: string;
@@ -9,20 +10,55 @@ type Flashcard = {
   box?: number;
 };
 
+const GRADES: Array<{ grade: ReviewGrade; label: string; hint: string; className: string }> = [
+  {
+    grade: "again",
+    label: "Again",
+    hint: "10 min",
+    className: "border-rose-300 text-rose-700 hover:bg-rose-50",
+  },
+  {
+    grade: "hard",
+    label: "Hard",
+    hint: "Same box",
+    className: "border-amber-300 text-amber-700 hover:bg-amber-50",
+  },
+  {
+    grade: "good",
+    label: "Good",
+    hint: "Next box",
+    className: "border-emerald-300 text-emerald-700 hover:bg-emerald-50",
+  },
+  {
+    grade: "easy",
+    label: "Easy",
+    hint: "Skip ahead",
+    className: "border-sky-300 text-sky-700 hover:bg-sky-50",
+  },
+];
+
 export function FlashcardDeck({
   cards,
   onGenerateMore,
   loading,
+  onGrade,
 }: {
   cards: Flashcard[];
   onGenerateMore?: () => void;
   loading?: boolean;
+  /**
+   * Persists a review. When provided, the focus deck shows the four grade
+   * buttons and only advances after the schedule is saved. Without it the deck
+   * stays a flip-only viewer instead of pretending to record reviews.
+   */
+  onGrade?: (cardId: string, grade: ReviewGrade) => Promise<void>;
 }) {
   const [viewMode, setViewMode] = useState<"grid" | "single">("grid");
   const [index, setIndex] = useState(0);
   const [flippedCards, setFlippedCards] = useState<Record<string, boolean>>({});
   const [singleFlipped, setSingleFlipped] = useState(false);
   const [reviewedCount, setReviewedCount] = useState(0);
+  const [grading, setGrading] = useState(false);
 
   const toggleCardFlip = (cardId: string) => {
     setFlippedCards((prev) => ({ ...prev, [cardId]: !prev[cardId] }));
@@ -33,7 +69,9 @@ export function FlashcardDeck({
       <div className="flex h-64 flex-col items-center justify-center p-6 text-center text-sm text-slate-600">
         <Zap className="h-6 w-6 animate-spin text-blue-600 mb-2" />
         <p className="font-bold text-slate-900">Generating Flashcards…</p>
-        <p className="text-xs text-slate-600 mt-1">Creating high-yield concept cards for quick active recall.</p>
+        <p className="text-xs text-slate-600 mt-1">
+          Creating high-yield concept cards for quick active recall.
+        </p>
       </div>
     );
   }
@@ -45,7 +83,9 @@ export function FlashcardDeck({
           <Layers className="w-6 h-6" />
         </div>
         <h4 className="text-sm font-bold text-slate-900">No Flashcards Built Yet</h4>
-        <p className="text-xs text-slate-600 mt-1 max-w-xs">Generate a deck of concept cards to test your retention.</p>
+        <p className="text-xs text-slate-600 mt-1 max-w-xs">
+          Generate a deck of concept cards to test your retention.
+        </p>
         {onGenerateMore && (
           <button
             onClick={onGenerateMore}
@@ -60,6 +100,25 @@ export function FlashcardDeck({
 
   const current = cards[index % cards.length];
   const isLast = index >= cards.length - 1;
+
+  const advance = () => {
+    setSingleFlipped(false);
+    setIndex((i) => (isLast ? 0 : i + 1));
+  };
+
+  const gradeCard = async (grade: ReviewGrade) => {
+    if (!onGrade || grading) return;
+    setGrading(true);
+    try {
+      await onGrade(current.id, grade);
+      setReviewedCount((c) => c + 1);
+      advance();
+    } catch {
+      // Caller surfaces the error; keep the card open so the review isn't lost.
+    } finally {
+      setGrading(false);
+    }
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col p-4 space-y-4">
@@ -120,11 +179,11 @@ export function FlashcardDeck({
                     <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-700">
                       Card #{idx + 1}
                     </span>
-                    <span className={`text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                      isFlipped
-                        ? "bg-emerald-100 text-emerald-800"
-                        : "bg-blue-100 text-blue-800"
-                    }`}>
+                    <span
+                      className={`text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                        isFlipped ? "bg-emerald-100 text-emerald-800" : "bg-blue-100 text-blue-800"
+                      }`}
+                    >
                       {isFlipped ? "Answer" : "Question"}
                     </span>
                   </div>
@@ -150,8 +209,13 @@ export function FlashcardDeck({
       {viewMode === "single" && (
         <div className="flex min-h-0 flex-1 flex-col justify-between space-y-4">
           <div className="flex items-center justify-between text-xs text-slate-600 font-semibold">
-            <span>Card {index + 1} of {cards.length}</span>
-            <span>Tap card to reveal answer</span>
+            <span>
+              Card {index + 1} of {cards.length}
+            </span>
+            <span>
+              {current.box ? `Box ${current.box} of 5 · ` : ""}
+              Tap card to reveal answer
+            </span>
           </div>
 
           <div
@@ -162,9 +226,11 @@ export function FlashcardDeck({
                 : "border-blue-400 bg-gradient-to-br from-blue-50 via-white to-indigo-50"
             }`}
           >
-            <span className={`text-[11px] font-extrabold uppercase tracking-widest px-3 py-1 rounded-full mb-4 ${
-              singleFlipped ? "bg-emerald-100 text-emerald-800" : "bg-blue-100 text-blue-800"
-            }`}>
+            <span
+              className={`text-[11px] font-extrabold uppercase tracking-widest px-3 py-1 rounded-full mb-4 ${
+                singleFlipped ? "bg-emerald-100 text-emerald-800" : "bg-blue-100 text-blue-800"
+              }`}
+            >
               {singleFlipped ? "Answer" : "Question / Active Recall Prompt"}
             </span>
 
@@ -189,21 +255,44 @@ export function FlashcardDeck({
               Previous Card
             </button>
 
-            <button
-              onClick={() => {
-                setSingleFlipped(false);
-                setReviewedCount((c) => c + 1);
-                if (isLast) {
-                  setIndex(0);
-                } else {
-                  setIndex((i) => i + 1);
-                }
-              }}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-blue-700 shadow-xs"
-            >
-              {isLast ? "Restart Deck" : "Next Card"} <ChevronRight className="h-4 w-4" />
-            </button>
+            {/* When grades are wired up, grading is the only way forward so a
+                review can't be skipped past without being persisted. */}
+            {!onGrade && (
+              <button
+                onClick={() => {
+                  setReviewedCount((c) => c + 1);
+                  advance();
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-bold text-white transition hover:bg-blue-700 shadow-xs"
+              >
+                {isLast ? "Restart Deck" : "Next Card"} <ChevronRight className="h-4 w-4" />
+              </button>
+            )}
           </div>
+
+          {onGrade && singleFlipped && (
+            <div className="pt-1">
+              <p className="mb-2 text-center text-[11px] font-extrabold uppercase tracking-widest text-slate-500">
+                How well did you know it?
+              </p>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {GRADES.map((option) => (
+                  <button
+                    key={option.grade}
+                    onClick={() => gradeCard(option.grade)}
+                    disabled={grading}
+                    className={`rounded-xl border bg-white px-1 py-2.5 text-center transition disabled:opacity-50 ${option.className}`}
+                  >
+                    <span className="block text-xs font-bold">{option.label}</span>
+                    <span className="mt-0.5 block text-[10px] text-slate-500">{option.hint}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-center text-[11px] font-semibold text-slate-500">
+                Your grade sets the next review date.
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>

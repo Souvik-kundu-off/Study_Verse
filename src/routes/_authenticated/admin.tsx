@@ -11,9 +11,11 @@ import {
   getSystemSettings,
   updateSystemSettings,
   purgeOrphanedVectorChunks,
+  reembedChunks,
   getAdminAuditLog,
 } from "@/lib/admin.functions";
 import { deleteCourse } from "@/lib/courses.functions";
+import { DEFAULT_MATCH_THRESHOLD } from "@/lib/rag-tuning";
 import { supabase } from "@/integrations/supabase/client";
 import {
   ShieldAlert,
@@ -209,6 +211,30 @@ function AdminConsolePage() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  // Re-embed Chunks Mutation
+  const reembedMutation = useMutation({
+    mutationFn: () => reembedChunks(),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ["adminTelemetry"] });
+      if (res.reembedded === 0 && res.failed === 0) {
+        toast.success("Every indexed chunk already has a real embedding.");
+        return;
+      }
+      if (res.failed > 0) {
+        toast.warning(
+          `Re-embedded ${res.reembedded} chunks, ${res.failed} failed. ${res.remaining} still pending.`,
+        );
+        return;
+      }
+      toast.success(
+        res.remaining > 0
+          ? `Re-embedded ${res.reembedded} chunks. ${res.remaining} still pending — run it again.`
+          : `Re-embedded ${res.reembedded} chunks. Everything is indexed.`,
+      );
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   // Export Users CSV Function
   const exportUsersCSV = () => {
     if (!users || users.length === 0) {
@@ -336,7 +362,11 @@ function AdminConsolePage() {
                 <Database className="w-4 h-4 text-amber-500" />
               </div>
               <p className="font-display text-3xl text-ink">{telemetry?.totalVectorChunks ?? 0}</p>
-              <p className="text-[11px] text-ink-subtle">Indexed Textbook & PDF Segments</p>
+              <p className="text-[11px] text-ink-subtle">
+                {telemetry && telemetry.pendingVectorChunks > 0
+                  ? `${telemetry.pendingVectorChunks} awaiting embeddings — not searchable yet`
+                  : "Document chunks indexed with real embeddings"}
+              </p>
             </div>
           </div>
 
@@ -841,18 +871,21 @@ function AdminConsolePage() {
                 <div>
                   <div className="flex items-center justify-between text-xs font-semibold text-ink mb-1.5">
                     <span>RAG Similarity Threshold (`match_threshold`)</span>
-                    <span className="font-mono text-brand font-bold">{settings?.matchThreshold ?? 0.30}</span>
+                    <span className="font-mono text-brand font-bold">{settings?.matchThreshold ?? DEFAULT_MATCH_THRESHOLD}</span>
                   </div>
                   <input
                     type="range"
                     min="0.10"
                     max="0.90"
                     step="0.05"
-                    value={settings?.matchThreshold ?? 0.30}
+                    value={settings?.matchThreshold ?? DEFAULT_MATCH_THRESHOLD}
                     onChange={(e) => settingsMutation.mutate({ matchThreshold: parseFloat(e.target.value) })}
                     className="w-full accent-brand cursor-pointer"
                   />
-                  <p className="text-[11px] text-ink-subtle mt-1">Higher values require stricter, direct matches from textbook PDFs.</p>
+                  <p className="text-[11px] text-ink-subtle mt-1">
+                    Higher values require stricter matches. Calibrated default is {DEFAULT_MATCH_THRESHOLD}: relevant passages score
+                    0.73–0.78, unrelated ones 0.44–0.57, so lower values admit noise.
+                  </p>
                 </div>
 
                 {/* Match Count Slider */}
@@ -898,6 +931,26 @@ function AdminConsolePage() {
                     <Download className="w-4 h-4" /> Export System Telemetry (JSON)
                   </button>
                 </div>
+              </div>
+
+              {/* Maintenance & Vector Storage Vacuum */}
+              <div className="rounded-2xl border border-border bg-surface p-6 space-y-4 shadow-sm">
+                <h3 className="font-display text-lg text-ink flex items-center gap-2">
+                  <Database className="w-5 h-5 text-emerald-500" /> Re-embed Indexed Chunks
+                </h3>
+                <p className="text-xs text-ink-muted">
+                  Chunks uploaded before real embeddings existed have no vector and cannot be cited. This
+                  re-embeds up to 500 at a time with the configured Gemini model. Repeat until nothing is
+                  pending.
+                </p>
+                <button
+                  onClick={() => reembedMutation.mutate()}
+                  disabled={reembedMutation.isPending}
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-4 py-2 text-xs transition shadow-sm disabled:opacity-60"
+                >
+                  <Database className="w-4 h-4" />
+                  <span>{reembedMutation.isPending ? "Embedding..." : "Re-embed Pending Chunks"}</span>
+                </button>
               </div>
 
               {/* Maintenance & Vector Storage Vacuum */}

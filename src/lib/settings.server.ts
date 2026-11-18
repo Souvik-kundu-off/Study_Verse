@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { DEFAULT_MATCH_COUNT, DEFAULT_MATCH_THRESHOLD } from "@/lib/rag-tuning";
 
 export interface SystemSettingsConfig {
   aiModel: string;
@@ -36,8 +37,8 @@ export async function getSystemSettingsServer(forceRefresh = false): Promise<Sys
 
     cachedSettings = {
       aiModel: map["ai_model"] ?? "openai/gpt-oss-120b",
-      matchThreshold: parseFloat(map["match_threshold"] ?? "0.20"),
-      matchCount: parseInt(map["match_count"] ?? "4", 10),
+      matchThreshold: parseFloat(map["match_threshold"] ?? String(DEFAULT_MATCH_THRESHOLD)),
+      matchCount: parseInt(map["match_count"] ?? String(DEFAULT_MATCH_COUNT), 10),
       maintenanceMode: map["maintenance_mode"] === "true",
       systemAnnouncement: map["system_announcement"] ?? "",
       timestamp: now,
@@ -48,8 +49,8 @@ export async function getSystemSettingsServer(forceRefresh = false): Promise<Sys
     return (
       cachedSettings ?? {
         aiModel: "openai/gpt-oss-120b",
-        matchThreshold: 0.20,
-        matchCount: 4,
+        matchThreshold: DEFAULT_MATCH_THRESHOLD,
+        matchCount: DEFAULT_MATCH_COUNT,
         maintenanceMode: false,
         systemAnnouncement: "",
         timestamp: now,
