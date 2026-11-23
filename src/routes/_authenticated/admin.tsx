@@ -15,7 +15,12 @@ import {
   getAdminAuditLog,
 } from "@/lib/admin.functions";
 import { deleteCourse } from "@/lib/courses.functions";
-import { DEFAULT_MATCH_THRESHOLD } from "@/lib/rag-tuning";
+import {
+  DEFAULT_MATCH_THRESHOLD,
+  MAX_MATCH_THRESHOLD,
+  MIN_MATCH_THRESHOLD,
+  clampMatchThreshold,
+} from "@/lib/rag-tuning";
 import { supabase } from "@/integrations/supabase/client";
 import {
   ShieldAlert,
@@ -875,16 +880,21 @@ function AdminConsolePage() {
                   </div>
                   <input
                     type="range"
-                    min="0.10"
-                    max="0.90"
+                    min={MIN_MATCH_THRESHOLD}
+                    max={MAX_MATCH_THRESHOLD}
                     step="0.05"
-                    value={settings?.matchThreshold ?? DEFAULT_MATCH_THRESHOLD}
-                    onChange={(e) => settingsMutation.mutate({ matchThreshold: parseFloat(e.target.value) })}
+                    value={clampMatchThreshold(settings?.matchThreshold ?? DEFAULT_MATCH_THRESHOLD)}
+                    onChange={(e) =>
+                      settingsMutation.mutate({
+                        matchThreshold: clampMatchThreshold(parseFloat(e.target.value)),
+                      })
+                    }
                     className="w-full accent-brand cursor-pointer"
                   />
                   <p className="text-[11px] text-ink-subtle mt-1">
                     Higher values require stricter matches. Calibrated default is {DEFAULT_MATCH_THRESHOLD}: relevant passages score
-                    0.73–0.78, unrelated ones 0.44–0.57, so lower values admit noise.
+                    0.73–0.78, unrelated ones 0.44–0.57, so lower values admit noise. The slider is floored at{" "}
+                    {MIN_MATCH_THRESHOLD} — just above the measured noise ceiling — because anything below it is inside the noise band.
                   </p>
                 </div>
 

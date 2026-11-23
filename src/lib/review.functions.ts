@@ -1,9 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import { nextSchedule, type ReviewGrade, type Schedule } from "@/lib/spaced-repetition";
 
 /**
- * Spaced repetition for flashcards.
+ * Persistence for the flashcard review loop.
  *
  * `flashcards.box` and `flashcards.next_review_at` existed from the first
  * migration but nothing ever wrote to them, so every card was permanently due
@@ -11,22 +12,13 @@ import { z } from "zod";
  * These functions are the single place that decides the next review date, so
  * the schedule survives reloads and can be queried.
  *
- * The model is a Leitner box ladder with an SM-2 style ease factor:
- *  - Boxes 1..5 map to fixed base intervals.
- *  - "good"/"easy" advance a box and multiply the interval by ease.
- *  - "hard" stays in the box (re-show at the current interval).
- *  - "again" resets to box 1, counts a lapse and lowers ease.
+ * The scheduling arithmetic itself lives in `spaced-repetition.ts` so it can
+ * be unit tested without the server runtime.
  */
 
-/** Base interval per box, in minutes. Index 0 is box 1. */
-const BOX_INTERVALS_MINUTES = [10, 60 * 24, 60 * 24 * 3, 60 * 24 * 7, 60 * 24 * 21] as const;
-
-const MIN_EASE = 1.3;
-const MAX_EASE = 5.0;
-/** Ease the migration set as the column default. */
-const DEFAULT_EASE = 2.5;
-
-export type ReviewGrade = "again" | "hard" | "good" | "easy";
+// Re-exported so existing imports of these names keep working.
+export { nextSchedule };
+export type { ReviewGrade, Schedule } from "@/lib/spaced-repetition";
 
 export type DueCard = {
   id: string;
@@ -45,75 +37,6 @@ export type DueCardsResult = {
   /** Every card the user owns, due or not. */
   totalCards: number;
 };
-
-const MINUTE = 60 * 1000;
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function intervalForBox(box: number) {
-  return BOX_INTERVALS_MINUTES[clamp(Math.round(box), 1, 5) - 1];
-}
-
-type Schedule = {
-  box: number;
-  ease: number;
-  lapses: number;
-  review_count: number;
-  next_review_at: string;
-  last_reviewed_at: string;
-};
-
-/** Pure schedule transition for one grade, so it is easy to reason about. */
-export function nextSchedule(
-  current: { box: number; ease: number | null; lapses: number; review_count: number },
-  grade: ReviewGrade,
-  now = new Date(),
-): Schedule {
-  const box = clamp(current.box ?? 1, 1, 5);
-  const ease = current.ease ?? DEFAULT_EASE;
-
-  let nextBox = box;
-  let nextEase = ease;
-  let days: number;
-  let lapses = current.lapses;
-
-  switch (grade) {
-    case "again":
-      nextBox = 1;
-      nextEase = clamp(ease - 0.2, MIN_EASE, MAX_EASE);
-      lapses += 1;
-      days = intervalForBox(1) / (60 * 24);
-      break;
-    case "hard":
-      nextBox = box;
-      nextEase = clamp(ease - 0.05, MIN_EASE, MAX_EASE);
-      days = intervalForBox(box) / (60 * 24);
-      break;
-    case "good":
-      nextBox = clamp(box + 1, 1, 5);
-      days = (intervalForBox(nextBox) / (60 * 24)) * ease;
-      break;
-    case "easy":
-      nextBox = clamp(box + 2, 1, 5);
-      nextEase = clamp(ease + 0.15, MIN_EASE, MAX_EASE);
-      days = (intervalForBox(nextBox) / (60 * 24)) * ease;
-      break;
-  }
-
-  // Guard against a zero/negative delay from a corrupted ease value.
-  const delayMs = Math.max(days * 24 * 60 * MINUTE, 10 * MINUTE);
-
-  return {
-    box: nextBox,
-    ease: Math.round(nextEase * 100) / 100,
-    lapses,
-    review_count: current.review_count + 1,
-    next_review_at: new Date(now.getTime() + delayMs).toISOString(),
-    last_reviewed_at: now.toISOString(),
-  };
-}
 
 /** Longest queue one session loads. The rest stay queued for the next round. */
 const DUE_QUEUE_LIMIT = 50;

@@ -2,7 +2,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { getSystemSettingsServer } from "@/lib/settings.server";
-import { DEFAULT_MATCH_COUNT, DEFAULT_MATCH_THRESHOLD } from "@/lib/rag-tuning";
+import {
+  DEFAULT_MATCH_COUNT,
+  DEFAULT_MATCH_THRESHOLD,
+  clampMatchThreshold,
+} from "@/lib/rag-tuning";
 import { embedTexts } from "@/lib/embeddings.server";
 import { findBinaryContentReason } from "@/lib/text-guard";
 
@@ -281,7 +285,9 @@ export async function getGroundedContext(
 
   try {
     const settings = await getSystemSettingsServer();
-    const matchThreshold = settings.matchThreshold ?? DEFAULT_MATCH_THRESHOLD;
+    // Clamped at the point of use as well: a row written before the guardrail
+    // existed must not keep admitting noise just because it is already stored.
+    const matchThreshold = clampMatchThreshold(settings.matchThreshold ?? DEFAULT_MATCH_THRESHOLD);
     const matchCount = settings.matchCount ?? DEFAULT_MATCH_COUNT;
 
     const { data, error } = await supabase.rpc("match_document_chunks", {

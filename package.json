@@ -12,6 +12,8 @@
     "build:dev": "cross-env NODE_OPTIONS=--experimental-require-module vite build --mode development",
     "preview": "cross-env NODE_OPTIONS=--experimental-require-module vite preview",
     "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "format": "prettier --write .",
     "supabase:keepalive": "node scripts/keep-supabase-alive.mjs",
     "types": "node scripts/generate-db-types.mjs && prettier --write src/integrations/supabase/types.ts"
@@ -92,6 +94,7 @@
     "prettier": "^3.7.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",
-    "vite": "^8.0.16"
+    "vite": "^8.0.16",
+    "vitest": "^3.2.7"
   }
 }

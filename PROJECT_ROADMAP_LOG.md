@@ -15,7 +15,7 @@ This document serves as the **official project ledger** tracking all implemented
         ▼                       ▼                                       ▼                       ▼
  ┌──────────────┐    ┌───────────────────┐                   ┌───────────────────┐   ┌───────────────────┐
  │ Multi-Subject│    │  Grounded RAG     │                   │ Cognitive Analytics│   │ Accessibility &   │
- │ Parallel Tracks    │  & Material Gen   │                   │ & FSRS Telemetry  │   │ Equity Engine     │
+ │ Parallel Tracks    │  & Material Gen   │                   │ & SRS Scheduling  │   │ Equity Engine     │
  └──────────────┘    └───────────────────┘                   └───────────────────┘   └───────────────────┘
    [COMPLETED]           [COMPLETED]                             [UPCOMING]              [UPCOMING]
 ```
@@ -159,11 +159,32 @@ This document serves as the **official project ledger** tracking all implemented
 
 ---
 
+### 🧪 Phase 2.98: Review Scheduling Hardening & Unit Test Suite (Completed ✅)
+- [x] **Leitner + SM-2 Scheduling Engine (`spaced-repetition.ts`)**:
+  - Five-box interval ladder (10 min → 1 day → 3 days → 7 days → 21 days) with a bounded per-card ease factor (`1.3`–`5.0`, default `2.5`).
+  - Four grades (`again`, `hard`, `good`, `easy`) each drive a defined box transition, ease delta and due offset; `again` resets to box 1 and increments `lapses`.
+  - A `MIN_DELAY_MINUTES` floor (10 min) prevents a zero or negative ease from scheduling a card into the past, and boxes are clamped so corrupt stored rows cannot escape the ladder.
+  - The logic was extracted out of `review.functions.ts` into a pure module so it can be tested without the server runtime; `review.functions.ts` re-exports `nextSchedule`, `ReviewGrade` and `Schedule` so existing imports are untouched.
+  - Named `spaced-repetition.ts` rather than `fsrs.ts` on purpose: the model is Leitner plus an SM-2 ease factor, not FSRS-4.5.
+- [x] **Committed Scheduler Test Suite (`spaced-repetition.test.ts`, Vitest)**:
+  - 50 tests covering the interval ladder, the full 4 grades × 5 boxes matrix, ease clamping at both bounds, lapse counting, `review_count` increments, null/corrupt stored state, the minimum-delay guard, timestamp formatting and purity.
+  - Test infrastructure added from scratch: Vitest 3.2.7, `vitest.config.ts` (standalone, does not boot the TanStack Start app config), `npm test` / `npm run test:watch` scripts.
+  - `npm test` → 50/50 passing; `npx tsc --noEmit` → clean.
+- [x] **RAG Threshold Floor Guardrail (`rag-tuning.ts`)**:
+  - `MIN_MATCH_THRESHOLD = 0.6` clears the measured noise ceiling of `0.5700`; `MAX_MATCH_THRESHOLD = 0.9` prevents a nonsensically high cutoff. Default stays `0.65`.
+  - Enforced in four layers: the admin slider's `min`/`max` plus clamp, the Zod validator (rejects out-of-band input rather than silently coercing it), the read paths in `admin.functions.ts` / `settings.server.ts`, and a clamp at the point of use in `rag.server.ts` so rows written before the guardrail cannot admit noise.
+  - The admin hint text now shows why the floor exists.
+- [x] **`again` Re-queue Path Confirmed (`review.tsx`)**:
+  - Grading a card `again` re-inserts it at box 1 into the session queue (`setRepeated((prev) => [...prev, { ...card, box: 1 }])`), so the card reappears in the same session instead of only ten minutes later.
+
+---
+
 ## ⏳ SECTION 2: UPCOMING MASTER PHASES
 
-### 📊 Phase 3: Cognitive Telemetry & FSRS Spaced Repetition Engine (Next Master Phase)
-- [ ] **FSRS-4.5 Scheduling Engine (`fsrs.ts`)**:
-  - Advanced Spaced Repetition calculation based on item stability, retrievability, and difficulty score.
+### 📊 Phase 3: Cognitive Telemetry & Adaptive Review Scheduling (Next Master Phase)
+- [x] **Leitner + SM-2 Scheduling Foundation** — shipped in Phase 2.98 as `spaced-repetition.ts` with a committed Vitest suite. The queue now survives reloads and the threshold control is guarded.
+- [ ] **FSRS-4.5 Upgrade (`fsrs.ts`)** *(optional, not committed to a date)*:
+  - A full FSRS-4.5 model — item stability, retrievability and difficulty rather than a box ladder plus ease — would replace the current scheduler. It is listed as a future upgrade, not as an outstanding defect: the shipped model is measured and tested, and FSRS would need its own calibration data before it could be trusted.
 - [ ] **Behavioral Telemetry Logging (`study_behavior_logs`)**:
   - Track active recall latency (time taken to flip cards or answer quiz questions), focus idle times, and rage skips.
 - [ ] **Adaptive Study Notifications**:
@@ -196,10 +217,12 @@ This document serves as the **official project ledger** tracking all implemented
 
 *Custom features requested by Professor & Student for upcoming sprint:*
 
-1. **🎬 Interactive Concept Animations & Algorithmic Visual Simulators (Professor Directive)**:
-   - Client-side Canvas / SVG step-by-step animation player (`TopicAnimator.tsx`) with Play, Pause, Scrub, and Speed controls.
-   - Generates interactive visual simulations for complex topics (*e.g., Traveling Salesperson Problem graph visits, Sorting swaps, Linked List pointer updates, Binary Tree traversals, Control Flow decision trees*).
-   - Allows students to visualize how algorithms execute step-by-step rather than just reading static text.
+1. **🎬 Interactive Concept Animations & Algorithmic Visual Simulators (Professor Directive)** — ✅ **SHIPPED**:
+   - Delivered as `UniversalAnimator` in `src/components/ui/UniversalAnimator.tsx` (the roadmap originally proposed the name `TopicAnimator.tsx`).
+   - Controls: Play / Pause, Previous / Next step, Reset, a clickable step-scrub timeline, and three playback speeds (Slow `2.5 s`, `1.5x`, Fast `0.8 s`).
+   - Renders four simulation shapes from the AI-generated 5–8 step JSON script: `process_steps`, `graph_network`, `data_bars` and `coordinate_canvas` — enough for sorting swaps, graph/tree traversals, pointer updates, data-structure diagrams and control-flow decision paths.
+   - Wired into every lesson body through `FormattedText.tsx`, so the ```` ```animation ```` block in masterclass notes renders as a live simulator rather than text.
+   - A live state-variable bar shows the algorithm's working values (`i`, `j`, `swapped`, etc.) at each step.
 2. **[Pending Input]**: Additional custom feature requests...
 
 ---
@@ -216,12 +239,17 @@ StudyVerse/
 │   │   │   └── CreateTrackModal.tsx   # Multi-subject track creation modal
 │   │   ├── ui/
 │   │   │   ├── FormattedText.tsx      # Publication-grade typography parser
+│   │   │   ├── UniversalAnimator.tsx  # Step-by-step algorithm simulator (Play/Pause/Scrub/Speed)
 │   │   │   └── MermaidDiagram.tsx     # Client-side Mermaid flowchart renderer
 │   │   └── tools/
 │   │       └── CodingPlayground.tsx   # Interactive code sandbox
 │   ├── lib/
 │   │   ├── ai.functions.ts            # AI server functions (Roadmap, Notes, Tutor, Quiz, Cards)
 │   │   ├── rag.server.ts              # RAG document chunking & vector search service
+│   │   ├── rag-tuning.ts              # Threshold calibration + clampMatchThreshold guardrail
+│   │   ├── spaced-repetition.ts       # Pure Leitner + SM-2 scheduler (unit tested)
+│   │   ├── spaced-repetition.test.ts  # 50-case Vitest suite for the scheduler
+│   │   ├── review.functions.ts        # Due queue + review persistence server functions
 │   │   └── progress.functions.ts      # Activity logging & session telemetry
 │   └── routes/
 │       ├── _authenticated/
@@ -229,6 +257,7 @@ StudyVerse/
 │       │   ├── focus.$topicId.tsx     # Fullscreen focus session workspace
 │       │   ├── onboarding.tsx         # Multi-step intake & syllabus parser
 │       │   └── roadmap.tsx            # Visual subject roadmap viewer
+├── vitest.config.ts                   # Standalone Vitest config (node env, @ alias)
 ├── public/
 │   ├── favicon.svg                    # StudyVerse SVG emblem favicon
 │   └── favicon.ico                    # StudyVerse fallback favicon

@@ -3,7 +3,13 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { embedTexts, isEmbeddingConfigured } from "@/lib/embeddings.server";
-import { DEFAULT_MATCH_COUNT, DEFAULT_MATCH_THRESHOLD } from "@/lib/rag-tuning";
+import {
+  DEFAULT_MATCH_COUNT,
+  DEFAULT_MATCH_THRESHOLD,
+  MAX_MATCH_THRESHOLD,
+  MIN_MATCH_THRESHOLD,
+  clampMatchThreshold,
+} from "@/lib/rag-tuning";
 
 /** Creates a service-role Supabase client that bypasses RLS. Server-only. */
 function getAdminSupabase() {
@@ -332,7 +338,9 @@ export const getSystemSettings = createServerFn({ method: "GET" })
 
     return {
       aiModel: settingsMap["ai_model"] ?? "qwen-3.8-27b",
-      matchThreshold: parseFloat(settingsMap["match_threshold"] ?? String(DEFAULT_MATCH_THRESHOLD)),
+      matchThreshold: clampMatchThreshold(
+        parseFloat(settingsMap["match_threshold"] ?? String(DEFAULT_MATCH_THRESHOLD)),
+      ),
       matchCount: parseInt(settingsMap["match_count"] ?? String(DEFAULT_MATCH_COUNT), 10),
       maintenanceMode: settingsMap["maintenance_mode"] === "true",
       systemAnnouncement: settingsMap["system_announcement"] ?? "",
@@ -341,7 +349,9 @@ export const getSystemSettings = createServerFn({ method: "GET" })
 
 const updateSettingsInput = z.object({
   aiModel: z.string().optional(),
-  matchThreshold: z.number().optional(),
+  // Rejected at the server, not just floored in the slider: a direct call must
+  // not be able to store a value inside the measured noise band.
+  matchThreshold: z.number().min(MIN_MATCH_THRESHOLD).max(MAX_MATCH_THRESHOLD).optional(),
   matchCount: z.number().optional(),
   maintenanceMode: z.boolean().optional(),
   systemAnnouncement: z.string().optional(),
@@ -356,7 +366,12 @@ export const updateSystemSettings = createServerFn({ method: "POST" })
 
     const updates: Array<{ key: string; value: string }> = [];
     if (data.aiModel !== undefined) updates.push({ key: "ai_model", value: data.aiModel });
-    if (data.matchThreshold !== undefined) updates.push({ key: "match_threshold", value: String(data.matchThreshold) });
+    if (data.matchThreshold !== undefined) {
+      updates.push({
+        key: "match_threshold",
+        value: String(clampMatchThreshold(data.matchThreshold)),
+      });
+    }
     if (data.matchCount !== undefined) updates.push({ key: "match_count", value: String(data.matchCount) });
     if (data.maintenanceMode !== undefined) updates.push({ key: "maintenance_mode", value: String(data.maintenanceMode) });
     if (data.systemAnnouncement !== undefined) updates.push({ key: "system_announcement", value: data.systemAnnouncement });
